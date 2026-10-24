@@ -674,43 +674,15 @@ function loanHistory(id) {
   modal.showModal();
 }
 async function login() {
-  app.innerHTML = `<div class="login"><section class="login-story">${brand()}<h1>為現在的累積，<br>看見未來的輪廓。</h1><p>投資帳戶、跨幣別資產、貸款與目標，<br>在一個安靜清楚的地方，慢慢理好。</p></section><section class="login-box"><div class="eyebrow">WELCOME HOME</div><h2>歡迎回到家計</h2><p>使用你的 Google 帳號登入，<br>繼續追蹤每一份資產。</p><div id="google-button"></div><div class="error-text" id="login-error" role="alert"></div>${!config.googleClientId ? '<div class="notice">尚未設定 Google 登入。請依 README 設定 Google Client ID 與網站來源。</div>' : ""}${config.dev ? '<button class="button primary" data-action="local">進入本機開發環境</button>' : ""}<div class="login-caption">僅開放 @mrandmrsjian.com 的 Google Workspace 帳號。<br>每位登入者的財務資料分開儲存。</div></section></div>`;
-  if (config.googleClientId) {
-    let script = $("#google-script");
-    if (!script) {
-      script = document.createElement("script");
-      script.id = "google-script";
-      script.src = "https://accounts.google.com/gsi/client";
-      script.async = true;
-      document.head.appendChild(script);
-    }
-    const init = () => {
-      google.accounts.id.initialize({
-        client_id: config.googleClientId,
-        nonce: config.nonce,
-        hd: config.domain,
-        callback: async (r) => {
-          try {
-            await api("auth/google", { credential: r.credential });
-            await refresh();
-          } catch (e) {
-            $("#login-error").textContent = e.message;
-          }
-        },
-      });
-      google.accounts.id.renderButton($("#google-button"), {
-        theme: "outline",
-        size: "large",
-        text: "signin_with",
-        locale: "zh_TW",
-      });
-    };
-    if (window.google) init();
-    else script.onload = init;
-    script.onerror = () =>
-      ($("#login-error").textContent =
-        "無法載入 Google 登入，請檢查網路後重新整理。");
-  }
+  const messages = {
+    config: "尚未設定 Google 登入，請設定 Google Client ID 與 Client Secret。",
+    state: "登入驗證已失效，請重新登入。",
+    cancelled: "已取消 Google 登入。",
+    domain: "只允許 @mrandmrsjian.com 的 Google Workspace 帳號。",
+    failed: "Google 驗證失敗，請重新登入。",
+  };
+  const error = new URLSearchParams(location.search).get("auth_error");
+  app.innerHTML = `<div class="login"><section class="login-story">${brand()}<h1>為現在的累積，<br>看見未來的輪廓。</h1><p>投資帳戶、跨幣別資產、貸款與目標，<br>在一個安靜清楚的地方，慢慢理好。</p></section><section class="login-box"><div class="eyebrow">WELCOME HOME</div><h2>歡迎回到家計</h2><p>${config.dev ? "直接進入本機預覽，<br>繼續追蹤每一份資產。" : "使用你的 Google 帳號登入，<br>繼續追蹤每一份資產。"}</p>${config.dev ? '<button class="button primary" data-action="local">以測試成員進入</button>' : config.googleConfigured ? '<a class="button primary" href="/auth/google">使用 Google 帳號登入</a>' : '<div class="notice">尚未設定 Google 登入。請依 README 設定 Google Client ID、Client Secret 與回呼網址。</div>'}<div class="error-text" role="alert">${esc(messages[error] || "")}</div><div class="login-caption">${config.dev ? "本機預覽免 Google 驗證，僅使用本機測試資料。" : "僅開放 @mrandmrsjian.com 的 Google Workspace 帳號。<br>每位登入者的財務資料分開儲存。"}</div></section></div>`;
 }
 async function sample() {
   if (!config.dev) return;
@@ -876,10 +848,6 @@ document.addEventListener("click", async (e) => {
     const a = t.dataset.action;
     if (a === "logout") {
       await api("auth/logout", {});
-      if (config.dev) {
-        toast("本機開發模式不使用登入工作階段");
-        return;
-      }
       state = null;
       config = await api("config");
       login();
@@ -915,7 +883,7 @@ modal.addEventListener("click", (e) => {
 });
 try {
   config = await api("config");
-  if (config.dev) await refresh();
+  if (config.dev) login();
   else {
     try {
       await refresh();

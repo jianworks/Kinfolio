@@ -1,4 +1,7 @@
 # Only local loopback development accepts this bypass. Production always requires Google.
 DEV_AUTH=true
-# Create with a cryptographically random value of at least 32 characters.
-SESSION_SECRET=replace-with-a-random-secret-at-least-32-characters
+# No Google credentials or SESSION_SECRET are required for local preview.
+# To test real Google login locally, set DEV_AUTH=false and configure:
+# APP_URL=http://localhost:8787
+# GOOGLE_CLIENT_ID=your-client-id
+# GOOGLE_CLIENT_SECRET=your-client-secret

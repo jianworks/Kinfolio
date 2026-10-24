@@ -9,12 +9,13 @@
 ```powershell
 npm install
 Copy-Item .dev.vars.example .dev.vars
-# 編輯 .dev.vars：以隨機字串取代 SESSION_SECRET（至少 32 字元）
 npm run db:local
 npm run dev
 ```
 
-開啟 http://127.0.0.1:8787 。`DEV_AUTH=true` 只在 localhost / 127.0.0.1 / ::1 主機名稱有效，使用本機 D1，不接觸正式資料。這次開發已建立本機設定與隨機密鑰。請勿覆蓋既有 `.dev.vars`。
+開啟 http://127.0.0.1:8787 。`DEV_AUTH=true` 只在 localhost / 127.0.0.1 / ::1 主機名稱有效，使用本機 D1，不接觸正式資料。開啟後按「以測試成員進入」，不需要 Google 憑證或隨機密鑰。請勿覆蓋既有 `.dev.vars`。
+
+`preview_database_id` 固定本機資料庫識別，避免填入正式 database_id 後切換到另一份本機資料。
 
 空白本機資料庫可點「建立示範資料」。示範數值為虛構資料，持有人姓名有「示範」前綴，與 Excel 無關。本機資料位於忽略版本控制的 `.wrangler/`。
 
@@ -38,14 +39,21 @@ npm run dev
 
 ## Google 登入
 
-1. 在 Google Cloud Console 建立 OAuth 2.0 **Web application** 用戶端。
-2. 設定 OAuth consent screen，內部 Workspace 應用可限制在自己的組織。
-3. Authorized JavaScript origins 加入正式網址，例如 `https://finance.example.com`。本機測試 Google 登入時加入 `http://localhost:8787`，並在 `.dev.vars` 設定 `DEV_AUTH=false`。
-4. 將 Web Client ID 設到 `wrangler.jsonc` 的 `vars.GOOGLE_CLIENT_ID`。此 GIS callback 模式不需要 Client Secret 或 redirect URI。
-5. 伺服器以 Google JWKS 驗證 JWT 的簽章、issuer、audience、效期及登入 nonce；要求 `email_verified=true`、電子郵件後綴 **@mrandmrsjian.com** 且 `hd=mrandmrsjian.com`。
-6. 因此需要該網域的 Google Workspace 身分，僅把第三方信箱註冊成一般 Google 帳戶不會通過。網域限制固定在伺服器，不可由瀏覽器更改。
+正式環境採與 ezAcquire 相同的 Google Authorization Code Flow + PKCE，登入狀態存於 D1。
 
-登入成功後建立 12 小時 HttpOnly、SameSite=Strict session cookie，HTTPS 下帶 Secure。寫入請求檢查 Origin；資料操作強制依 session 使用者篩選。版本欄位透過資料庫 trigger 防止舊視窗覆寫與並行重複扣款，移轉另有 request key 防重送。
+1. 在 Google Cloud Console 建立 OAuth 2.0 **Web application** 用戶端，設定 consent screen。
+2. 在 **Authorized redirect URIs** 加入完整回呼網址：
+   `https://kinfolio.mrandmrsjian.com/auth/google/callback`
+3. 將 Client ID 填入 `wrangler.jsonc` 的 `vars.GOOGLE_CLIENT_ID`，設定 `GOOGLE_CLIENT_SECRET` 與 `APP_URL=https://kinfolio.mrandmrsjian.com`。Client Secret 只儲存在 Cloudflare Secrets。
+4. 後端檢查 OAuth state、一次性請求、PKCE、Google JWT 簽章、issuer、audience、效期及 nonce，再要求 `email_verified=true`、信箱後綴 **@mrandmrsjian.com**、`hd=mrandmrsjian.com`。
+5. 此流程不載入 Google 前端 SDK，不需要設定 Authorized JavaScript origins。只做本機預覽不必在 Google Console 增加 localhost。
+6. 若要本機測試真正 Google 登入，另加入 `http://localhost:8787/auth/google/callback`，在 `.dev.vars` 設定 `DEV_AUTH=false`、`APP_URL=http://localhost:8787` 及 Google 用戶端憑證。
+
+Cookie 只保存安全隨機憑證，D1 只保存其 SHA-256 雜湊，8 小時到期。Cookie 使用 HttpOnly、SameSite=Lax，HTTPS 下採 Secure 與 `__Host-` 前綴。登出立即刪除 D1 工作階段，舊 Cookie 即使被保留也無法再次使用。OAuth state 同樣只存雜湊，10 分鐘內有效，回呼取出時即刪除，不能重用。
+
+本機免驗證必須同時具備 `DEV_AUTH=true` 和 loopback hostname；正式網域不接受免驗證模式。測試成員沿用 `local-development` ID，因此既有本機資料的歸屬保持不變。
+
+先前 JWT Cookie 與 `SESSION_SECRET` 已停用，升級後需重新登入；原有帳戶及財務資料不變。舊的 SESSION_SECRET 可從 Cloudflare 移除，也可暫留，它不再被程式讀取。新增 `0002_auth_sessions.sql` 只建立登入相關資料表。
 
 ## 部署到自己的 Cloudflare
 
@@ -57,8 +65,8 @@ npx wrangler d1 create finance-db
 將回傳的 `database_id` 填入 `wrangler.jsonc`，取代全零佔位值。Worker 名稱可自行修改。
 
 ```powershell
-npx wrangler secret put SESSION_SECRET
-# 透過互動提示輸入至少 32 字元的隨機密鑰，請勿沿用範例
+npx wrangler secret put GOOGLE_CLIENT_SECRET
+# 互動貼上 Google OAuth Client Secret，請勿貼進程式碼或 Git
 npm run db:remote
 npm run check
 npm test
@@ -81,7 +89,7 @@ npm run build
 
 整合測試會在 8791 埠啟動獨立 Worker，建立隔離的本機 D1，測試驗證／來源檢查、不同登入者隔離、移轉原子性、跨幣別成本、重送／並行寫入、補登、貸款、目標和匯出；結束時停止測試服務，測試資料保留在 `.wrangler/test-*` 供檢查，不修改預覽資料。
 
-Google 真實登入及正式 D1 部署仍須設定自己的 Google Client ID 與 Cloudflare 帳戶後驗證。
+Google 真實登入仍須設定自己的 Google Client ID、Client Secret 及正確回呼網址後驗證。
 
 ## 架構
 

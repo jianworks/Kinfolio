@@ -1,20 +1,24 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "family-finance",
+  "name": "kinfolio",
   "main": "src/worker.js",
   "compatibility_date": "2026-10-24",
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*"],
+    "run_worker_first": ["/api/*", "/auth/*"],
   },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "finance-db",
       "database_id": "1609a6ec-cb55-4714-b185-f091e5e39617",
+      "preview_database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations",
     },
   ],
-  "vars": { "GOOGLE_CLIENT_ID": "" },
+  "vars": {
+    "GOOGLE_CLIENT_ID": "118447540246-7l7qs9cvcbopom2mkgbgc5mnrhba7nj9.apps.googleusercontent.com",
+    "APP_URL": "https://kinfolio.mrandmrsjian.com",
+  },
 }

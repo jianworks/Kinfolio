@@ -1,4 +1,4 @@
-import { createRemoteJWKSet, jwtVerify, SignJWT } from "jose";
+import { authRoute, currentUser } from "./auth.js";
 import {
   InputError,
   requireThat,
@@ -13,76 +13,12 @@ import {
   validateTimeline,
   transferCosts,
 } from "./domain.js";
-const keys = createRemoteJWKSet(
-  new URL("https://www.googleapis.com/oauth2/v3/certs"),
-);
 const uid = () => crypto.randomUUID();
 const json = (body, status = 200, headers = {}) =>
   Response.json(body, {
     status,
     headers: { "Cache-Control": "no-store", ...headers },
   });
-const cookie = (request, name) =>
-  request.headers
-    .get("Cookie")
-    ?.split(";")
-    .map((s) => s.trim())
-    .find((s) => s.startsWith(name + "="))
-    ?.slice(name.length + 1);
-const isDev = (request, env) =>
-  env.DEV_AUTH === "true" &&
-  ["127.0.0.1", "localhost", "[::1]"].includes(new URL(request.url).hostname);
-function secret(env) {
-  if (!env.SESSION_SECRET || env.SESSION_SECRET.length < 32)
-    throw new Error("SESSION_SECRET is not configured");
-  return new TextEncoder().encode(env.SESSION_SECRET);
-}
-function sessionCookie(request, name, value, age) {
-  return `${name}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${age}${new URL(request.url).protocol === "https:" ? "; Secure" : ""}`;
-}
-async function sign(env, payload, expiry = "12h") {
-  return new SignJWT(payload)
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuer("family-finance")
-    .setAudience("family-finance")
-    .setIssuedAt()
-    .setExpirationTime(expiry)
-    .sign(secret(env));
-}
-async function verify(env, token) {
-  return (
-    await jwtVerify(token, secret(env), {
-      algorithms: ["HS256"],
-      issuer: "family-finance",
-      audience: "family-finance",
-    })
-  ).payload;
-}
-async function user(request, env) {
-  if (isDev(request, env))
-    return {
-      id: "local-development",
-      email: "local@mrandmrsjian.com",
-      name: "本機開發",
-    };
-  try {
-    const p = await verify(env, cookie(request, "finance_session") || "");
-    requireThat(p.sub && p.email && p.type === "session", "登入已過期");
-    return { id: p.sub, email: p.email, name: p.name };
-  } catch {
-    return null;
-  }
-}
-async function initUser(db, u) {
-  await db.batch([
-    db
-      .prepare(
-        "INSERT INTO users(id,email,name) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET email=excluded.email,name=excluded.name",
-      )
-      .bind(u.id, u.email, u.name),
-    db.prepare("INSERT OR IGNORE INTO revisions(user_id) VALUES(?)").bind(u.id),
-  ]);
-}
 async function data(db, u) {
   const tables = [
     "holders",
@@ -151,61 +87,8 @@ async function api(request, env) {
     if (Number(request.headers.get("Content-Length")) > 65536)
       return json({ error: "資料太大" }, 413);
   }
-  if (path === "/api/auth/google" && request.method === "POST") {
-    const b = await request.json();
-    let p;
-    try {
-      const challenge = await verify(
-        env,
-        cookie(request, "finance_nonce") || "",
-      );
-      p = (
-        await jwtVerify(b.credential, keys, {
-          algorithms: ["RS256"],
-          audience: env.GOOGLE_CLIENT_ID,
-          issuer: ["https://accounts.google.com", "accounts.google.com"],
-        })
-      ).payload;
-      requireThat(
-        challenge.type === "nonce" && p.nonce === challenge.nonce,
-        "登入驗證碼失效，請重新整理",
-      );
-      requireThat(
-        p.email_verified === true &&
-          typeof p.email === "string" &&
-          p.email.toLowerCase().endsWith("@mrandmrsjian.com") &&
-          p.hd === "mrandmrsjian.com" &&
-          typeof p.sub === "string",
-        "只允許 @mrandmrsjian.com 的 Google Workspace 帳號",
-      );
-    } catch {
-      return json(
-        {
-          error:
-            "Google 驗證失敗，請使用 @mrandmrsjian.com 帳號並重新整理後登入",
-        },
-        401,
-      );
-    }
-    const u = { id: p.sub, email: p.email, name: p.name || p.email };
-    await initUser(db, u);
-    const token = await sign(env, {
-      sub: u.id,
-      email: u.email,
-      name: u.name,
-      type: "session",
-    });
-    return json({ ok: true }, 200, {
-      "Set-Cookie": sessionCookie(request, "finance_session", token, 43200),
-    });
-  }
-  if (path === "/api/auth/logout" && request.method === "POST")
-    return json({ ok: true }, 200, {
-      "Set-Cookie": sessionCookie(request, "finance_session", "", 0),
-    });
-  const u = await user(request, env);
+  const u = await currentUser(request, env);
   if (!u) return json({ error: "請先登入" }, 401);
-  if (isDev(request, env)) await initUser(db, u);
   if (path === "/api/state" && request.method === "GET")
     return json({ user: u, ...(await data(db, u)) });
   if (path === "/api/export" && request.method === "GET") {
@@ -469,24 +352,15 @@ export default {
   async fetch(request, env) {
     let response;
     try {
+      const path = new URL(request.url).pathname;
       if (
-        new URL(request.url).pathname === "/api/config" &&
-        request.method === "GET"
-      ) {
-        const nonce = uid(),
-          token = await sign(env, { nonce, type: "nonce" }, "10m");
-        response = json(
-          {
-            googleClientId: env.GOOGLE_CLIENT_ID,
-            domain: "mrandmrsjian.com",
-            dev: isDev(request, env),
-            nonce,
-          },
-          200,
-          { "Set-Cookie": sessionCookie(request, "finance_nonce", token, 600) },
-        );
-      } else
-        response = new URL(request.url).pathname.startsWith("/api/")
+        path === "/api/config" ||
+        path === "/api/auth/logout" ||
+        path.startsWith("/auth/")
+      )
+        response = await authRoute(request, env);
+      else
+        response = path.startsWith("/api/")
           ? await api(request, env)
           : await env.ASSETS.fetch(request);
     } catch (e) {
@@ -510,11 +384,11 @@ export default {
     }
     const h = new Headers(response.headers);
     h.set("X-Content-Type-Options", "nosniff");
-    h.set("Referrer-Policy", "same-origin");
+    if (!h.has("Referrer-Policy")) h.set("Referrer-Policy", "same-origin");
     h.set("X-Frame-Options", "DENY");
     h.set(
       "Content-Security-Policy",
-      "default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' https://accounts.google.com; frame-src https://accounts.google.com; connect-src 'self' https://accounts.google.com; img-src 'self' data: https://*.googleusercontent.com; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+      "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data: https://*.googleusercontent.com; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
     );
     return new Response(response.body, { status: response.status, headers: h });
   },
