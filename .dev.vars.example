@@ -1,0 +1,4 @@
+# Only local loopback development accepts this bypass. Production always requires Google.
+DEV_AUTH=true
+# Create with a cryptographically random value of at least 32 characters.
+SESSION_SECRET=replace-with-a-random-secret-at-least-32-characters
