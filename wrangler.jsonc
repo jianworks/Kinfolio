@@ -12,7 +12,7 @@
     {
       "binding": "DB",
       "database_name": "finance-db",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "1609a6ec-cb55-4714-b185-f091e5e39617",
       "migrations_dir": "migrations",
     },
   ],
