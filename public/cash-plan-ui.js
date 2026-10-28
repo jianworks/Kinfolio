@@ -158,17 +158,10 @@ export function mountCashPlan({ root, saved, save, toast }) {
           toast("請填寫項目名稱");
           return;
         }
-        editingRow = editingRow === index ? null : index;
+        if (editingRow === index) await persistPlan();
+        else editingRow = index;
       } else if (t.dataset.cash === "save") {
-        if (!root.querySelector("input:invalid") && forecast(draft)) {
-          saving = true;
-          draw();
-          await save(draft);
-          saved = { payload: JSON.stringify(draft) };
-          dirty = false;
-          editingRow = null;
-          toast("現金規劃已儲存");
-        } else throw new Error("請先修正輸入欄位");
+        await persistPlan();
       } else if (["income", "expense"].includes(t.dataset.cash)) {
         if (draft.items.length >= 30) throw new Error("最多 30 個收支項目");
         draft.items.push({
@@ -218,6 +211,16 @@ export function mountCashPlan({ root, saved, save, toast }) {
       draw();
     }
   };
+  async function persistPlan() {
+    forecast(draft);
+    saving = true;
+    draw();
+    await save(draft);
+    saved = { payload: JSON.stringify(draft) };
+    dirty = false;
+    editingRow = null;
+    toast("現金規劃已儲存");
+  }
   draw();
 }
 function chart(rows, floor) {
