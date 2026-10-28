@@ -15,9 +15,17 @@ function setup(t, save) {
     querySelector: () => ({}),
   };
   const status = {};
+  const totals = new Map();
   const root = {
     innerHTML: "",
-    querySelector: (selector) => selector === "input:invalid" ? null : status,
+    querySelector: (selector) => {
+      if (selector === "input:invalid") return null;
+      if (selector.startsWith("[data-total=")) {
+        if (!totals.has(selector)) totals.set(selector, {});
+        return totals.get(selector);
+      }
+      return status;
+    },
   };
   const messages = [];
   mountCashPlan({
@@ -31,6 +39,7 @@ function setup(t, save) {
   });
   return {
     root, status, messages,
+    total: (index) => totals.get(`[data-total="${index}"]`).textContent,
     click: (dataset) => root.onclick({ target: { closest: () => ({ dataset }) } }),
     input: (dataset, value) => root.oninput({ target: { dataset, value, setCustomValidity() {} } }),
   };
@@ -53,6 +62,28 @@ test("完成既有列及新增收支的編輯時儲存輸入內容", async (t) =
     assert.equal(saved.at(-1).items[index].name, "新增項目");
   }
   assert.equal(saved.length, 3);
+});
+
+test("每項全年合計即時加總十二個月，保留小數並將空白視為零", async (t) => {
+  const ui = setup(t, async () => {});
+  assert.match(ui.root.innerHTML, /全年合計/);
+  assert.equal(ui.total(0), "0");
+  await ui.click({ edit: "0" });
+  ui.input({ row: "0", col: "0" }, "1234.56");
+  ui.input({ row: "0", col: "11" }, "0.01");
+  assert.equal(ui.total(0), "1,234.57");
+  ui.input({ row: "0", col: "11" }, "");
+  assert.equal(ui.total(0), "1,234.56");
+  await ui.click({ fill: "0" });
+  assert.equal(ui.total(0), "14,814.72");
+  await ui.click({ edit: "0" });
+  assert.equal(ui.total(0), "14,814.72");
+  await ui.click({ cash: "expense" });
+  assert.equal(ui.total(1), "0");
+  ui.input({ row: "1", col: "0" }, "100");
+  assert.equal(ui.total(1), "100");
+  await ui.click({ remove: "0" });
+  assert.equal(ui.total(0), "100");
 });
 
 test("儲存期間阻止重複操作，失敗後保留編輯內容並可重試", async (t) => {

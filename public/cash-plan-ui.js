@@ -75,10 +75,10 @@ export function mountCashPlan({ root, saved, save, toast }) {
   };
   function draw() {
     const months = monthsFrom(draft.start);
-    root.innerHTML = `<div id="cash-results"></div><section class="panel cash-editor"><div class="cash-toolbar"><div><h2>未來 12 個月收支</h2><p>按右側鉛筆圖示編輯該列。空白金額自動以 0 計算。</p></div><div class="actions"><button class="button" data-cash="income">＋ 收入</button><button class="button" data-cash="expense">＋ 支出</button><button class="button primary" data-cash="save" ${saving ? "disabled" : ""}>${saving ? "儲存中…" : "儲存規劃"}</button></div></div><p id="cash-save-status" role="status"></p><div class="cash-scroll"><table class="cash-table"><thead><tr><th>項目</th>${months.map((m) => `<th>${m}</th>`).join("")}<th class="cash-actions-heading">操作</th></tr></thead><tbody>${draft.items
+    root.innerHTML = `<div id="cash-results"></div><section class="panel cash-editor"><div class="cash-toolbar"><div><h2>未來 12 個月收支</h2><p>按右側鉛筆圖示編輯該列。空白金額自動以 0 計算。</p></div><div class="actions"><button class="button" data-cash="income">＋ 收入</button><button class="button" data-cash="expense">＋ 支出</button><button class="button primary" data-cash="save" ${saving ? "disabled" : ""}>${saving ? "儲存中…" : "儲存規劃"}</button></div></div><p id="cash-save-status" role="status"></p><div class="cash-scroll"><table class="cash-table"><thead><tr><th>項目</th>${months.map((m) => `<th>${m}</th>`).join("")}<th class="cash-total-heading">全年合計</th><th class="cash-actions-heading">操作</th></tr></thead><tbody>${draft.items
       .map((item, i) => {
         const editing = editingRow === i;
-        return `<tr class="cash-row-${item.direction} ${editing ? "cash-row-editing" : ""}"><th>${editing ? `<input aria-label="項目名稱" data-name="${i}" maxlength="40" value="${esc(item.name)}">` : esc(item.name)}</th>${item.values.map((v, j) => `<td>${editing ? `<input aria-label="${esc(item.name)} ${months[j]} 金額" type="number" min="0" step="0.01" data-row="${i}" data-col="${j}" value="${v === null || v === 0 ? "" : v / 100}" placeholder="">` : v === null || v === 0 ? "" : new Intl.NumberFormat("zh-TW", { maximumFractionDigits: 2 }).format(v / 100)}</td>`).join("")}<td class="cash-row-actions"><button class="link-button" data-edit="${i}" aria-label="${editing ? "完成編輯" : "編輯"} ${esc(item.name)}" title="${editing ? "完成編輯" : "編輯"}">${rowIcon(editing ? "done" : "edit")}</button><button class="link-button" data-fill="${i}" aria-label="首月金額套用全年 ${esc(item.name)}" title="首月金額套用全年">${rowIcon("fill")}</button><button class="link-button" data-remove="${i}" aria-label="刪除 ${esc(item.name)}" title="刪除">${rowIcon("remove")}</button></td></tr>`;
+        return `<tr class="cash-row-${item.direction} ${editing ? "cash-row-editing" : ""}"><th>${editing ? `<input aria-label="項目名稱" data-name="${i}" maxlength="40" value="${esc(item.name)}">` : esc(item.name)}</th>${item.values.map((v, j) => `<td>${editing ? `<input aria-label="${esc(item.name)} ${months[j]} 金額" type="number" min="0" step="0.01" data-row="${i}" data-col="${j}" value="${v === null || v === 0 ? "" : v / 100}" placeholder="">` : v === null || v === 0 ? "" : new Intl.NumberFormat("zh-TW", { maximumFractionDigits: 2 }).format(v / 100)}</td>`).join("")}<td class="cash-row-total" data-total="${i}"></td><td class="cash-row-actions"><button class="link-button" data-edit="${i}" aria-label="${editing ? "完成編輯" : "編輯"} ${esc(item.name)}" title="${editing ? "完成編輯" : "編輯"}">${rowIcon(editing ? "done" : "edit")}</button><button class="link-button" data-fill="${i}" aria-label="首月金額套用全年 ${esc(item.name)}" title="首月金額套用全年">${rowIcon("fill")}</button><button class="link-button" data-remove="${i}" aria-label="刪除 ${esc(item.name)}" title="刪除">${rowIcon("remove")}</button></td></tr>`;
       })
       .join(
         "",
@@ -86,6 +86,11 @@ export function mountCashPlan({ root, saved, save, toast }) {
     update();
   }
   function update() {
+    draft.items.forEach((item, index) => {
+      const total = item.values.reduce((sum, value) => sum + (value ?? 0), 0);
+      root.querySelector(`[data-total="${index}"]`).textContent =
+        new Intl.NumberFormat("zh-TW", { maximumFractionDigits: 2 }).format(total / 100);
+    });
     const status = root.querySelector("#cash-save-status");
     status.textContent = dirty
       ? "有未儲存的變更"

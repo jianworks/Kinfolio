@@ -114,6 +114,12 @@
 }
 .cash-row-actions .link-button:hover { background: var(--soft, #e7ece3); }
 .cash-row-actions svg { flex-shrink: 0; }
+.cash-editor .cash-row-total,
+.cash-editor .cash-total-heading {
+  font-weight: 700;
+  white-space: nowrap;
+  border-left: 2px solid var(--line);
+}
 .cash-row-editing td,
 .cash-row-editing th {
   background: var(--soft, #f5f8f0);
