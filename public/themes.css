@@ -99,6 +99,9 @@ textarea {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
+.sidebar-bottom {
+  margin-top: 0;
+}
 .theme-trigger {
   display: flex;
   align-items: center;
