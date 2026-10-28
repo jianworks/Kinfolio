@@ -1,4 +1,11 @@
+import { validatePlan, rollPlan } from "../public/cash-plan-domain.js";
 import { authRoute, currentUser } from "./auth.js";
+import {
+  portfolioStatements,
+  estimates,
+  snapshotEvent,
+  cashFlowStatements,
+} from "./portfolios.js";
 import {
   InputError,
   requireThat,
@@ -12,6 +19,7 @@ import {
   accountState,
   validateTimeline,
   transferCosts,
+  transferPrincipal,
 } from "./domain.js";
 const uid = () => crypto.randomUUID();
 const json = (body, status = 200, headers = {}) =>
@@ -22,12 +30,17 @@ const json = (body, status = 200, headers = {}) =>
 async function data(db, u) {
   const tables = [
     "holders",
+    "cash_plans",
     "accounts",
     "events",
     "loans",
     "loan_balances",
     "goals",
     "revisions",
+    "portfolios",
+    "holdings",
+    "portfolio_snapshots",
+    "portfolio_current",
   ];
   const results = await db.batch(
     tables.map((t) =>
@@ -58,7 +71,7 @@ async function mutate(db, u, b, statements) {
 function eventStatement(db, u, e) {
   return db
     .prepare(
-      "INSERT INTO events(user_id,account_id,date,kind,amount,cost_delta,cost_twd_delta,rate,note,transfer_id) VALUES(?,?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO events(user_id,account_id,date,kind,amount,cost_delta,cost_twd_delta,rate,note,transfer_id,portfolio_estimate_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
     )
     .bind(
       u.id,
@@ -71,6 +84,7 @@ function eventStatement(db, u, e) {
       e.rate,
       e.note || "",
       e.transfer_id || null,
+      e.estimateId || null,
     );
 }
 async function api(request, env) {
@@ -97,12 +111,14 @@ async function api(request, env) {
       .bind(u.id)
       .all();
     return json({
-      schemaVersion: 1,
+      schemaVersion: 3,
       exportedAt: new Date().toISOString(),
       user: u,
       units: {
         money: "hundredths of the account currency",
         fx: "millionths of TWD per currency unit",
+        quantity: "millionths of one share",
+        price: "millionths of the account currency",
       },
       ...(await data(db, u)),
       transfers: transfers.results,
@@ -120,7 +136,23 @@ async function api(request, env) {
   requireThat(b && typeof b === "object" && !Array.isArray(b), "資料格式錯誤");
   const d = await data(db, u),
     stmts = [];
-  if (path === "/api/holders") {
+  if (path === "/api/portfolio-estimates")
+    return json({ estimates: await estimates(env, u, b, d) });
+  if (path === "/api/cash-plan") {
+    const checked = validatePlan(b.plan);
+    const plan = checked.start < today().slice(0,7) ? rollPlan(checked,today().slice(0,7)) : checked;
+    stmts.push(
+      db
+        .prepare(
+          "INSERT INTO cash_plans(user_id,payload,updated_at) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",
+        )
+        .bind(u.id, JSON.stringify(plan), new Date().toISOString()),
+    );
+  } else if (path === "/api/portfolio") {
+    stmts.push(...portfolioStatements(db, u, b, d));
+  } else if (path === "/api/portfolio-snapshot") {
+    stmts.push(eventStatement(db, u, await snapshotEvent(db, u, b, d)));
+  } else if (path === "/api/holders") {
     stmts.push(
       db
         .prepare("INSERT INTO holders(id,user_id,name) VALUES(?,?,?)")
@@ -192,6 +224,10 @@ async function api(request, env) {
     };
     validateTimeline(a, [...d.events, e]);
     stmts.push(eventStatement(db, u, e));
+    if (kind !== "valuation")
+      stmts.push(
+        ...cashFlowStatements(db, u, d, a.id, e.amount, e.rate, e.date),
+      );
   } else if (path === "/api/transfers") {
     const from = own(d.accounts, b.fromId, "轉出帳戶"),
       to = own(d.accounts, b.toId, "轉入帳戶");
@@ -205,15 +241,15 @@ async function api(request, env) {
     const fromRate = rate(b.fromRate, from.currency),
       toRate = rate(b.toRate, to.currency),
       s = accountState(from, d.events, day),
-      cost = transferCosts(s, amount, b.principal),
+      cost = transferPrincipal(s, amount, received, fromRate),
       id = uid();
-    const targetCost =
-      from.currency === to.currency
-        ? cost.local
-        : money(b.targetPrincipal, "轉入本金");
+    const targetCost = cost.target;
     requireThat(
-      (cost.local === 0) === (targetCost === 0),
-      "轉出與轉入本金必須同時為零，或同時大於零",
+      (b.principal === undefined ||
+        money(b.principal, "轉出本金") === amount) &&
+        (b.targetPrincipal === undefined ||
+          money(b.targetPrincipal, "轉入本金") === received),
+      "移轉本金已改為與實際金額相同，請重新整理後再操作",
     );
     const note = b.note ? text(b.note, "備註", 500) : "";
     const out = {
@@ -250,25 +286,19 @@ async function api(request, env) {
         .bind(id, u.id, day, text(b.requestKey, "操作識別碼")),
       eventStatement(db, u, out),
       eventStatement(db, u, into),
+      ...cashFlowStatements(db, u, d, from.id, -amount, fromRate, day),
+      ...cashFlowStatements(db, u, d, to.id, received, toRate, day),
     );
   } else if (path === "/api/loans") {
     const h = own(d.holders, b.holderId, "持有人"),
       id = uid(),
-      currency = choice(b.currency, ["TWD", "USD", "JPY"], "幣別"),
-      annual = Number(b.annualRate);
-    requireThat(
-      b.annualRate !== "" &&
-        Number.isFinite(annual) &&
-        annual >= 0 &&
-        annual <= 100,
-      "年利率必須介於 0 與 100%",
-    );
+      currency = choice(b.currency, ["TWD", "USD", "JPY"], "幣別");
     stmts.push(
       db
         .prepare(
           "INSERT INTO loans(id,user_id,holder_id,name,currency,annual_rate) VALUES(?,?,?,?,?,?)",
         )
-        .bind(id, u.id, h.id, text(b.name, "貸款名稱"), currency, annual),
+        .bind(id, u.id, h.id, text(b.name, "貸款名稱"), currency, 0),
     );
     stmts.push(
       db
@@ -325,6 +355,12 @@ async function api(request, env) {
     );
     const row = own(d[table], b.id, "記錄");
     if (table === "events") {
+      requireThat(
+        !d.portfolios.some(
+          (p) => p.account_id === row.account_id && p.mode === "holdings",
+        ) || row.kind === "valuation",
+        "持股模式下請以反向資金異動更正投入／提領，避免現金餘額失準",
+      );
       requireThat(
         !["opening", "transfer_in", "transfer_out"].includes(row.kind),
         "開戶與移轉記錄不可單獨刪除",

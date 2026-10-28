@@ -5,3 +5,7 @@ DEV_AUTH=true
 # APP_URL=http://localhost:8787
 # GOOGLE_CLIENT_ID=your-client-id
 # GOOGLE_CLIENT_SECRET=your-client-secret
+# Optional: US latest-price quotes. Keep the real key only in .dev.vars / Cloudflare Secrets.
+# FINNHUB_API_KEY=your-finnhub-key
+# Optional: Taiwan primary quotes; exchange open data remains the fallback.
+# FUGLE_API_KEY=your-fugle-key

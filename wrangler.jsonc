@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "kinfolio",
+  "keep_vars": true,
   "main": "src/worker.js",
   "compatibility_date": "2026-10-24",
   "assets": {
@@ -18,7 +19,6 @@
     },
   ],
   "vars": {
-    "GOOGLE_CLIENT_ID": "118447540246-7l7qs9cvcbopom2mkgbgc5mnrhba7nj9.apps.googleusercontent.com",
     "APP_URL": "https://kinfolio.mrandmrsjian.com",
   },
 }

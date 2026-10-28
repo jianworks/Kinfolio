@@ -122,26 +122,38 @@ export function validateTimeline(account, events) {
       [v, c, t].every(Number.isSafeInteger),
       "累計金額超出精確計算範圍",
     );
-    requireThat(
-      v >= 0 && c >= 0 && t >= 0,
-      "此異動會使當日或後續的帳戶價值／本金小於零",
-    );
+    requireThat(v >= 0, "此異動會使當日或後續的帳戶價值小於零");
   }
 }
 export function transferCosts(source, amount, requested) {
   const local =
     requested === undefined
-      ? Math.min(amount, source.cost)
-      : money(requested, "移轉本金");
+      ? Math.min(amount, Math.max(0, source.cost))
+      : money(requested, "提領本金");
   requireThat(amount > 0 && amount <= source.value, "轉出金額超過帳戶價值");
-  requireThat(local <= source.cost, "移轉本金超過剩餘本金");
+  requireThat(local <= Math.max(0, source.cost), "提領本金超過可提領本金");
   // Preserve historical TWD cost across currencies, independently of current FX.
   const twd =
-    source.cost === 0
+    local === 0 || source.cost <= 0
       ? 0
       : Number(
           (BigInt(source.costTwd) * BigInt(local) + BigInt(source.cost) / 2n) /
             BigInt(source.cost),
         );
   return { local, twd };
+}
+export function transferPrincipal(source, amount, received, fromRate) {
+  requireThat(
+    Number.isSafeInteger(amount) &&
+      Number.isSafeInteger(received) &&
+      amount > 0 &&
+      received > 0,
+    "移轉金額必須大於零",
+  );
+  requireThat(amount <= source.value, "轉出金額超過帳戶價值");
+  // Both sides share the same TWD principal adjustment; local principals equal actual cash flows.
+  return { local: amount, target: received, twd: toTwd(amount, fromRate) };
+}
+export function simpleReturn(profit, principal) {
+  return principal > 0 ? (profit / principal) * 100 : null;
 }

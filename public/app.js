@@ -1,4 +1,17 @@
-import { accountState, toTwd, today, FX } from "./domain.js";
+import {setThemeUser, themeTrigger} from "./themes.js";
+import { mountCashPlan, resetCashDraft } from "./cash-plan-ui.js";
+import {
+  restoreEstimates,
+  acceptEstimate,
+  estimateNeedsRefresh,
+} from "./estimate-state.js";
+import { accountState, toTwd, today, FX, simpleReturn } from "./domain.js";
+import {
+  portfolioEligible,
+  portfolioPanel,
+  openPortfolioEditor,
+  openSnapshot,
+} from "./portfolio-ui.js";
 const $ = (s) => document.querySelector(s),
   app = $("#app"),
   modal = $("#modal");
@@ -8,6 +21,95 @@ let state,
   holder = "all",
   asOf = today(),
   busy = false;
+let liveEstimates = new Map(),
+  estimateLoading = false,
+  estimateError = "",
+  estimateEpoch = 0,
+  autoEstimateKey = "";
+function activePortfolios() {
+  return (state?.portfolios || []).filter(
+    (p) =>
+      p.mode === "holdings" &&
+      (holder === "all" ||
+        state.accounts.find((a) => a.id === p.account_id)?.holder_id ===
+          holder),
+  );
+}
+async function loadEstimates(
+  ids = activePortfolios().map((p) => p.account_id),
+) {
+  if (!ids.length || estimateLoading) return;
+  const received = new Map();
+  const epoch = estimateEpoch,
+    version = state.revisions[0].version;
+  estimateLoading = true;
+  estimateError = "";
+  autoEstimateKey = `${version}:${holder}:${asOf}:${Math.floor(Date.now() / 900000)}`;
+  render();
+  try {
+    for (const id of ids) {
+      let pending = true,
+        round = 0;
+      while (pending && round++ < 25) {
+        const result = await api("portfolio-estimates", { accountIds: [id] });
+        if (
+          epoch !== estimateEpoch ||
+          !state ||
+          state.revisions[0].version !== version
+        )
+          return;
+        if (result.estimates.some((e) => e.version !== version))
+          throw new Error("資料已有異動，請重新整理後查看持股估值");
+        for (const e of result.estimates) {
+          acceptEstimate(liveEstimates, e);
+          received.set(e.accountId, e);
+        }
+        pending = result.estimates.some((e) => e.pending);
+        render();
+        const opened = modal.dataset.detailAccount;
+        if (modal.open && opened) detail(opened);
+      }
+      if (pending) throw new Error("行情較多，請稍後按更新行情繼續");
+    }
+    return received;
+  } catch (e) {
+    if (epoch === estimateEpoch) estimateError = e.message;
+  } finally {
+    if (epoch === estimateEpoch) {
+      estimateLoading = false;
+      render();
+      const id = modal.dataset.detailAccount;
+      if (state && modal.open && id) detail(id);
+    }
+  }
+}
+const estimateTime = (value) =>
+  new Date(value).toLocaleString("zh-TW", {
+    timeZone: "Asia/Taipei",
+    hour12: false,
+  });
+function liveEstimateNotice() {
+  if (asOf !== today() || !activePortfolios().length || page === "transfers")
+    return "";
+  const active = activePortfolios().map((p) => liveEstimates.get(p.account_id));
+  const missing = active.some((e) => !e?.complete);
+  const warned = active.some((e) => e?.updateWarning);
+  const times = active
+    .filter((e) => e?.complete)
+    .map((e) => e.estimatedAt)
+    .sort();
+  const message = estimateError
+    ? esc(estimateError) + "；已有完整估算的帳戶維持原金額。"
+    : estimateLoading
+      ? "正在背景更新行情；目前金額維持最近一次完整估算。"
+      : warned
+        ? "部分行情更新未完成，沿用最近一次完整估算。"
+        : missing
+          ? "部分帳戶尚無完整持股估算，暫用已儲存歷史估值；請查看帳戶明細。"
+          : "目前顯示資料庫保存的最近一次完整持股估算（非即時報價）。";
+  return `<div class="notice">${message}${times.length ? "<br>估算最後更新：" + estimateTime(times[0]) + "（台北時間；各帳戶時間可在明細查看）" : ""}<br>行情更新完成後才替換金額；歷史曲線仍只使用手動儲存的估值快照。</div>`;
+}
+
 const icons = {
   overview:
     '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
@@ -40,6 +142,10 @@ const fmt = (v, d = 0) =>
   }).format(v / 100);
 const pct = (v) =>
   `${new Intl.NumberFormat("zh-TW", { maximumFractionDigits: 1 }).format(v)}%`;
+const returnLabel = (profit, principal) => {
+  const percent = simpleReturn(profit, principal);
+  return percent === null ? "—（本金非正數）" : pct(percent);
+};
 const colors = ["#34664e", "#88a67a", "#bdcda8", "#dfcf9a"];
 const types = ["股票", "期貨", "美股", "未上市公司"];
 const kindNames = {
@@ -75,6 +181,7 @@ async function api(path, body) {
   }
   if (!r.ok) {
     if (r.status === 401 && path !== "auth/google") {
+      resetCashDraft();
       state = null;
       login();
     }
@@ -84,12 +191,31 @@ async function api(path, body) {
 }
 async function refresh() {
   state = await api("state");
+  estimateEpoch++;
+  liveEstimates = restoreEstimates(state);
+  estimateLoading = false;
+  estimateError = "";
+  autoEstimateKey = "";
   render();
 }
-function accountsAt(day = asOf, h = holder) {
+function accountsAt(day = asOf, h = holder, useLive = true) {
   return state.accounts
     .filter((a) => h === "all" || a.holder_id === h)
     .map((a) => accountState(a, state.events, day))
+    .map((a) => {
+      const e = liveEstimates.get(a.id);
+      return useLive && day === today() && e?.complete
+        ? {
+            ...a,
+            value: e.total,
+            valueTwd: e.totalTwd,
+            rate: e.rate,
+            live: true,
+            liveWarning: e.warning || e.updateWarning,
+            estimateUpdatedAt: e.estimatedAt,
+          }
+        : a;
+    })
     .filter((a) => a.lastDate);
 }
 function loansAt(day = asOf, h = holder) {
@@ -112,8 +238,8 @@ function loansAt(day = asOf, h = holder) {
       };
     });
 }
-function totals(day = asOf, h = holder) {
-  const a = accountsAt(day, h),
+function totals(day = asOf, h = holder, useLive = true) {
+  const a = accountsAt(day, h, useLive),
     l = loansAt(day, h);
   const value = a.reduce((n, a) => n + a.valueTwd, 0),
     cost = a.reduce((n, a) => n + a.costTwd, 0),
@@ -123,11 +249,13 @@ function totals(day = asOf, h = holder) {
 const holderName = (id) => state.holders.find((h) => h.id === id)?.name || "";
 const accountName = (id) => state.accounts.find((a) => a.id === id)?.name || "";
 function brand() {
-  return '<div class="brand"><div class="brandmark">家</div><div><strong>家計</strong><small>KINFOLIO</small></div></div>';
+  return '<div class="brand"><div class="brandmark" aria-hidden="true"><svg viewBox="0 0 40 40" fill="none"><path d="M9 19 20 10l11 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 19v11h16V19" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" opacity=".7"/><path d="m16 25 4-4 4 2 5-7" stroke="#d9e8bd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="brand-copy"><strong>家計 <span>Kinfolio</span></strong><small lang="en">Family wealth, in perspective.</small></div></div>';
 }
 function render() {
   if (!state) return;
+  setThemeUser(state.user.id || state.user.email);
   const labels = {
+    cash: "現金規劃",
     overview: "資產總覽",
     accounts: "投資帳戶",
     transfers: "資金移轉",
@@ -138,13 +266,24 @@ function render() {
   app.innerHTML = `<div class="shell"><aside class="sidebar">${brand()}<nav class="nav" aria-label="主選單">${Object.entries(
     labels,
   )
+    .filter(([key]) => key !== "accounts")
     .map(
       ([key, label]) =>
         `<button data-page="${key}" class="${page === key ? "active" : ""}" ${page === key ? 'aria-current="page"' : ""}>${icon(key)}${label}</button>`,
     )
     .join(
       "",
-    )}</nav><div class="sidebar-bottom"><div class="privacy">每一筆累積，離目標更近一步。<br>金額統一以新台幣彙總。</div><div class="user"><div class="avatar">${esc(state.user.name.slice(0, 1))}</div><span>${esc(state.user.name)}</span><button class="logout" data-action="logout">登出</button></div></div></aside><main class="main"><header class="topbar"><span>家庭財務 / <strong>${labels[page]}</strong></span><strong>${esc(state.user.email)}</strong></header><div class="workspace"><div class="heading"><div><div class="eyebrow">YOUR WEALTH, IN PERSPECTIVE</div><h1>${labels[page]}</h1><p class="subtitle">${{ overview: "讓每一份資產，都有清楚的全貌。", accounts: "追蹤投入本金、帳戶價值與投資成果。", transfers: "串起帳戶之間的資金與本金流向。", loans: "記錄貸款餘額，掌握你的淨資產。", goals: "為每位持有人，設定下一個里程碑。", holders: "分別管理每位家人的資產與目標。" }[page]}</p></div><div class="actions">${page === "overview" ? btn("資金移轉", "transfer", false, "transfers") + btn("記錄估值", "valuation", true) : page === "accounts" ? btn("新增帳戶", "account", true) : page === "transfers" ? btn("新增移轉", "transfer", true) : page === "loans" ? btn("新增貸款", "loan", true) : page === "goals" ? btn("新增目標", "goal", true) : btn("新增持有人", "holder", true)}</div></div>${config.dev ? '<div class="notice">本機開發模式 · 資料儲存在本機 D1，正式部署一律使用 Google 登入。 <button class="link-button" data-action="sample">建立示範資料</button></div>' : ""}<div class="filters"><div class="tabs" aria-label="持有人篩選"><button data-holder="all" class="${holder === "all" ? "selected" : ""}">全部持有人</button>${state.holders.map((h) => `<button data-holder="${h.id}" class="${holder === h.id ? "selected" : ""}">${esc(h.name)}</button>`).join("")}</div><label class="date-filter">檢視日期 <input id="as-of" type="date" max="${today()}" value="${asOf}" aria-label="檢視日期"></label></div>${{ overview: overview, accounts: accountPage, transfers: transferPage, loans: loanPage, goals: goalPage, holders: holderPage }[page]()}<footer class="footer"><span>家計 Kinfolio · 依各帳戶最近記錄彙總，非即時行情</span><button data-action="export">${icon("download")} 匯出資料備份</button></footer></div></main></div>`;
+    )}</nav>${themeTrigger()}<div class="sidebar-bottom"><div class="user"><div class="avatar">${esc(state.user.name.slice(0, 1))}</div><span>${esc(state.user.name)}</span><button class="logout" data-action="logout">登出</button></div></div></aside><main class="main"><div class="workspace"><div class="heading"><div><div class="eyebrow">YOUR WEALTH, IN PERSPECTIVE</div><h1>${labels[page]}</h1><p class="subtitle">${{ cash: "用每月收支，掌握需要保留的現金。", overview: holder === "all" ? "每個人的資產，各自清楚掌握。" : "讓每一份資產，都有清楚的全貌。", accounts: "追蹤投入本金、帳戶價值與投資成果。", transfers: "串起帳戶之間的資金與本金流向。", loans: "記錄貸款餘額，掌握你的淨資產。", goals: "為每位持有人，設定下一個里程碑。", holders: "分別管理每位家人的資產與目標。" }[page]}</p></div><div class="actions">${page === "cash" ? '<button class="button primary" id="cash-settings-open">設定現金規劃</button>' : page === "overview" ? (holder === "all" ? btn("新增持有人", "holder", true) : btn("資金移轉", "transfer", false, "transfers") + btn("記錄估值", "valuation", true)) : page === "accounts" ? btn("新增帳戶", "account", true) : page === "transfers" ? btn("新增移轉", "transfer", true) : page === "loans" ? btn("新增貸款", "loan", true) : page === "goals" ? btn("新增目標", "goal", true) : btn("新增持有人", "holder", true)}</div></div>${config.dev ? '<div class="notice">本機開發模式 · 資料儲存在本機 D1，正式部署一律使用 Google 登入。 <button class="link-button" data-action="sample">建立示範資料</button></div>' : ""}<div class="filters" ${page === "cash" ? "hidden" : ""}><div class="tabs" aria-label="持有人篩選"><button data-holder="all" class="${holder === "all" ? "selected" : ""}">全部持有人</button>${state.holders.map((h) => `<button data-holder="${h.id}" class="${holder === h.id ? "selected" : ""}">${esc(h.name)}</button>`).join("")}</div><label class="date-filter">檢視日期 <input id="as-of" type="date" max="${today()}" value="${asOf}" aria-label="檢視日期"></label></div>${page === "cash" ? "" : liveEstimateNotice()}${{ cash: () => '<div id="cash-plan-root"></div>', overview: overview, accounts: accountPage, transfers: transferPage, loans: loanPage, goals: goalPage, holders: holderPage }[page]()}<footer class="footer"><span>${page === "cash" ? "家計 Kinfolio · 台幣月度現金流估算" : "家計 Kinfolio · 依各帳戶最近記錄彙總，非即時行情"}${page !== "cash" ? ' · 匯率：<a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer">ExchangeRate-API</a>' : ""}</span><button data-action="export">${icon("download")} 匯出資料備份</button></footer></div></main></div>`;
+  if (page === "cash")
+    mountCashPlan({
+      root: $("#cash-plan-root"),
+      saved: state.cash_plans?.[0],
+      toast,
+      save: async (plan) => {
+        await api("cash-plan", { plan });
+        state = await api("state");
+      },
+    });
   $("#as-of").onchange = (e) => {
     asOf = e.target.value || today();
     render();
@@ -154,6 +293,20 @@ function render() {
     exportButton.setAttribute("width", "12");
     exportButton.setAttribute("height", "12");
   }
+  const key = `${state.revisions[0].version}:${holder}:${asOf}:${Math.floor(Date.now() / 900000)}`;
+  const staleIds = activePortfolios()
+    .filter((p) => estimateNeedsRefresh(liveEstimates.get(p.account_id)))
+    .map((p) => p.account_id);
+  if (
+    page !== "cash" &&
+    asOf === today() &&
+    staleIds.length &&
+    !estimateLoading &&
+    autoEstimateKey !== key
+  )
+    queueMicrotask(() => {
+      if (!estimateLoading && state) void loadEstimates(staleIds);
+    });
 }
 function stats() {
   const t = totals();
@@ -168,15 +321,13 @@ function stats() {
     {
       label: "累計投入本金",
       value: t.cost,
-      foot: "依歷史匯率計算台幣成本",
+      foot: "依資金異動時匯率累計",
       icon: "transfers",
     },
     {
       label: "累計投資損益",
       value: t.profit,
-      foot: t.cost
-        ? pct((t.profit / t.cost) * 100) + " 簡單報酬率"
-        : "尚無投入本金",
+      foot: returnLabel(t.profit, t.cost) + (t.cost > 0 ? " 簡單報酬率" : ""),
       icon: "arrow",
     },
     {
@@ -216,28 +367,36 @@ function chart() {
       (_, i) => all[Math.round((i * (all.length - 1)) / 23)],
     );
   }
-  const points = days.map((day) => ({ day, ...totals(day) })),
+  const points = days.map((day) => ({ day, ...totals(day, holder, false) })),
     max = Math.max(...points.flatMap((p) => [p.value, p.cost]), 100),
+    min = Math.min(0, ...points.map((p) => p.cost)),
     W = 680,
     H = 205,
     top = 12,
     bottom = 172,
     left = 62,
     right = 665,
-    x = (i) => left + (i * (right - left)) / Math.max(points.length - 1, 1),
-    y = (v) => bottom - (v / max) * (bottom - top),
+    timestamps = points.map((p) => Date.parse(`${p.day}T00:00:00Z`)),
+    start = timestamps[0],
+    duration = Math.max(timestamps[timestamps.length - 1] - start, 1),
+    x = (i) => left + ((timestamps[i] - start) / duration) * (right - left),
+    y = (v) => bottom - ((v - min) / (max - min)) * (bottom - top),
     path = (key) =>
       points.map((p, i) => `${i ? "L" : "M"}${x(i)},${y(p[key])}`).join(" ");
-  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="資產總值與投入本金歷史趨勢"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#8dad7c" stop-opacity=".27"/><stop offset="100%" stop-color="#8dad7c" stop-opacity=".01"/></linearGradient></defs>${[
+  const axisLabels = [];
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="資產總值與投入本金歷史趨勢"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--chart, #8dad7c)" stop-opacity=".27"/><stop offset="100%" stop-color="var(--chart, #8dad7c)" stop-opacity=".01"/></linearGradient></defs>${[
     0, 1, 2, 3,
   ]
     .map((i) => {
-      const v = (max * i) / 3;
-      return `<line x1="${left}" y1="${y(v)}" x2="${right}" y2="${y(v)}" stroke="#edf0e9" stroke-dasharray="3 5"/><text x="${left - 10}" y="${y(v) + 4}" text-anchor="end">${new Intl.NumberFormat("zh-TW", { notation: "compact", maximumFractionDigits: 1 }).format(v / 100)}</text>`;
+      const v = min + ((max - min) * i) / 3;
+      axisLabels.push(
+        `<span class="chart-axis-y" style="left:${((left - 10) / W) * 100}%;top:${(y(v) / H) * 100}%">${new Intl.NumberFormat("zh-TW", { notation: "compact", maximumFractionDigits: 1 }).format(v / 100)}</span>`,
+      );
+      return `<line x1="${left}" y1="${y(v)}" x2="${right}" y2="${y(v)}" stroke="var(--line, #edf0e9)" stroke-dasharray="3 5"/>`;
     })
     .join(
       "",
-    )}<path d="${path("value")} L${x(points.length - 1)},${bottom} L${left},${bottom} Z" fill="url(#area)"/><path d="${path("cost")}" stroke="#c0c8b5" stroke-width="1.6" stroke-dasharray="5 5" fill="none"/><path d="${path("value")}" stroke="#46775a" stroke-width="2.7" fill="none"/>${points.map((p, i) => `<circle cx="${x(i)}" cy="${y(p.value)}" r="3" fill="#46775a"><title>${p.day}：NT$ ${fmt(p.value)}</title></circle>`).join("")}${[...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])].map((i) => `<text x="${x(i)}" y="198" text-anchor="${i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}">${points[i].day}</text>`).join("")}</svg></div><div class="chart-note">沿用最近一次估值與匯率；損益包含匯率變化，不是年化報酬。</div>`;
+    )}<path d="${path("value")} L${x(points.length - 1)},${bottom} L${left},${bottom} Z" fill="url(#area)"/><path d="${path("cost")}" stroke="var(--chart-cost, #c0c8b5)" stroke-width="1.6" stroke-dasharray="5 5" fill="none"/><path d="${path("value")}" stroke="var(--chart, #46775a)" stroke-width="2.7" fill="none"/>${points.map((p, i) => `<circle cx="${x(i)}" cy="${y(p.value)}" r="3" fill="var(--chart, #46775a)"><title>${p.day}：NT$ ${fmt(p.value)}</title></circle>`).join("")}</svg>${axisLabels.join("")}${[...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])].map((i) => `<span class="chart-axis-x" style="left:${(x(i) / W) * 100}%;top:${(198 / H) * 100}%;--axis-offset:${i === 0 ? "0%" : i === points.length - 1 ? "-100%" : "-50%"}">${points[i].day}</span>`).join("")}</div><div class="chart-note">沿用最近一次估值與匯率；損益包含匯率變化，不是年化報酬。</div>`;
 }
 function allocation() {
   const a = accountsAt(),
@@ -254,12 +413,12 @@ function allocation() {
 }
 function accountTable() {
   const a = accountsAt();
-  return `<section class="panel table-panel"><div class="panel-head"><h2>投資帳戶 <small> / ${a.length}</small></h2><button class="link-button" data-action="account">＋ 新增帳戶</button></div>${!a.length ? empty("建立你的第一個投資帳戶", "支援台幣、美金與日幣，按持有人分別追蹤。", btn("新增帳戶", "account", true)) : `<div class="table-wrap"><table><thead><tr><th>帳戶 / 持有人</th><th>類型</th><th class="num">投入本金（原幣）</th><th class="num">帳戶價值（原幣）</th><th class="num">台幣價值</th><th class="num">損益（台幣）</th><th></th></tr></thead><tbody>${a.map((a) => `<tr><td><div class="account-name"><span class="account-symbol">${a.currency === "TWD" ? "台" : a.currency === "USD" ? "美" : "日"}</span><div>${esc(a.name)}<small>${esc(holderName(a.holder_id))} · ${a.currency}</small></div></div></td><td><span class="tag">${a.type}</span></td><td class="num">${fmt(a.cost, 2)}</td><td class="num">${fmt(a.value, 2)}<small>${a.lastDate} · 匯率 ${a.rate / FX}</small></td><td class="num">${fmt(a.valueTwd)}</td><td class="num ${a.valueTwd - a.costTwd < 0 ? "down" : "up"}">${a.valueTwd - a.costTwd >= 0 ? "+" : ""}${fmt(a.valueTwd - a.costTwd)}<small>${a.costTwd ? pct(((a.valueTwd - a.costTwd) / a.costTwd) * 100) : "—"}</small></td><td><button class="link-button" data-detail="${a.id}">明細 ↗</button></td></tr>`).join("")}</tbody></table></div>`}</section>`;
+  return `<section class="panel table-panel"><div class="panel-head"><h2>投資帳戶 <small> / ${a.length}</small></h2><button class="link-button" data-action="account">＋ 新增帳戶</button></div>${!a.length ? empty("建立你的第一個投資帳戶", "支援台幣、美金與日幣，按持有人分別追蹤。", btn("新增帳戶", "account", true)) : `<div class="table-wrap"><table><thead><tr><th>帳戶 / 持有人</th><th>類型</th><th class="num">投入本金（原幣）</th><th class="num">帳戶價值（原幣）</th><th class="num">台幣價值</th><th class="num">損益（台幣）</th><th></th></tr></thead><tbody>${a.map((a) => `<tr><td><div class="account-name"><span class="account-symbol">${a.currency === "TWD" ? "台" : a.currency === "USD" ? "美" : "日"}</span><div>${esc(a.name)}<small>${esc(holderName(a.holder_id))} · ${a.currency}</small></div></div></td><td><span class="tag">${a.type}</span></td><td class="num">${fmt(a.cost, a.currency === "USD" ? 2 : 0)}</td><td class="num">${fmt(a.value, a.currency === "USD" ? 2 : 0)}<small>${a.live ? "持股估算 · 最後更新 " + estimateTime(a.estimateUpdatedAt) + (a.liveWarning ? "（沿用最近行情）" : "") : a.lastDate} · 匯率 ${a.rate / FX}</small></td><td class="num">${fmt(a.valueTwd)}</td><td class="num ${a.valueTwd - a.costTwd < 0 ? "down" : "up"}">${a.valueTwd - a.costTwd >= 0 ? "+" : ""}${fmt(a.valueTwd - a.costTwd)}<small>${returnLabel(a.valueTwd - a.costTwd, a.cost > 0 ? a.costTwd : 0)}</small></td><td><button class="link-button" data-detail="${a.id}">明細 ↗</button></td></tr>`).join("")}</tbody></table></div>`}</section>`;
 }
 function goalsList() {
   const goals = state.goals.filter(
     (g) => holder === "all" || g.holder_id === holder,
-  );
+  ).sort((a, b) => a.date.localeCompare(b.date));
   return goals.length
     ? `<div class="goal-list">${goals
         .map((g) => {
@@ -286,7 +445,44 @@ function activities() {
     : empty("目前還沒有記錄");
 }
 function overview() {
+  if (holder === "all") return holdersOverview();
   return `${stats()}<div class="grid"><section class="panel"><div class="panel-head"><h2>資產趨勢</h2><div class="legend"><span>資產總值</span><span class="cost-legend">投入本金</span></div></div>${chart()}</section><section class="panel"><div class="panel-head"><h2>資產配置</h2><small>依帳戶類型</small></div>${allocation()}</section></div>${accountTable()}<div class="grid"><section class="panel"><div class="panel-head"><h2>資產目標</h2><button class="link-button" data-action="goal">＋ 設定目標</button></div>${goalsList()}</section><section class="panel"><div class="panel-head"><h2>最近動態</h2><small>截至 ${asOf}</small></div>${activities()}</section></div>`;
+}
+function holdersOverview() {
+  if (!state.holders.length)
+    return `<section class="panel">${empty("先新增一位資產持有人", "每位持有人的資產、貸款與目標都會分別呈現。", btn("新增持有人", "holder", true))}</section>`;
+  return `<div class="owners-heading"><div><h2>持有人資產概況</h2><p class="subtitle">資產與目標依持有人分別呈現，點選明細查看個人的趨勢與帳戶。</p></div><span class="subtitle">${state.holders.length} 位持有人</span></div><div class="owners-overview">${state.holders
+    .map((h) => {
+      const t = totals(asOf, h.id),
+        accounts = accountsAt(asOf, h.id),
+        loans = loansAt(asOf, h.id).filter((l) => l.lastDate);
+      const dates = [...accounts, ...loans].map((a) => a.lastDate).sort();
+      const goals = state.goals.filter((g) => g.holder_id === h.id).sort((a, b) => a.date.localeCompare(b.date));
+      return `<article class="owner-overview panel" aria-label="${esc(h.name)}的資產概況"><header class="owner-header"><div class="owner-identity"><span class="owner-avatar" aria-hidden="true">${esc(Array.from(h.name)[0])}</span><div><h2>${esc(h.name)}</h2><p>${accounts.length} 個投資帳戶 · ${loans.length} 筆貸款</p></div></div><span class="owner-record-date">${
+        accounts.some((a) => a.live)
+          ? "估算最後更新 " +
+            estimateTime(
+              accounts
+                .filter((a) => a.live)
+                .map((a) => a.estimateUpdatedAt)
+                .sort()[0],
+            )
+          : dates.length
+            ? "最近記錄 " + dates.at(-1)
+            : "尚無資產記錄"
+      }</span></header><div class="owner-value"><span>資產總值</span><strong><small>NT$</small>${fmt(t.value)}</strong></div><dl class="owner-metrics"><div><dt>累計投入本金</dt><dd>NT$ ${fmt(t.cost)}</dd></div><div><dt>累計投資損益</dt><dd class="${t.profit < 0 ? "down" : "up"}">${t.profit >= 0 ? "+" : ""}NT$ ${fmt(t.profit)}</dd><small>${returnLabel(t.profit, t.cost)}</small></div><div><dt>貸款餘額</dt><dd>NT$ ${fmt(t.debt)}</dd></div><div><dt>淨資產</dt><dd>NT$ ${fmt(t.net)}</dd></div></dl><section class="owner-goals" aria-label="${esc(h.name)}的資產目標"><h3>資產目標</h3>${
+        goals.length
+          ? `<div class="goal-list">${goals
+              .map((g) => {
+                const current = g.basis === "net" ? t.net : t.value,
+                  progress = Math.max(0, (current / g.target) * 100);
+                return `<div><div class="goal-title"><span>${esc(g.name)}</span><strong>${pct(progress)}</strong></div><div class="goal-meta"><span>${g.basis === "net" ? "淨資產" : "總資產"}目標 · ${g.date}</span></div><div class="progress"><div class="progress-fill" data-progress="${Math.min(progress, 100)}"></div></div><div class="goal-meta"><span>NT$ ${fmt(current)} / ${fmt(g.target)}</span><span>${progress >= 100 ? "已達成" : "差額 " + fmt(Math.max(0, g.target - current))}</span></div></div>`;
+              })
+              .join("")}</div>`
+          : '<p class="subtitle">尚未設定目標</p>'
+      }</section><button class="button owner-detail" data-holder="${esc(h.id)}" aria-label="檢視${esc(h.name)}的資產總覽">檢視資產明細 →</button></article>`;
+    })
+    .join("")}</div>`;
 }
 function accountPage() {
   return stats() + accountTable();
@@ -307,7 +503,7 @@ function transferPage() {
             )),
       )
       .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
-  return `<div class="notice">移轉同時調整兩端帳戶價值及投入本金。跨幣別以實際轉入金額記錄，原始台幣成本會保留；無手續費欄位，請以實收金額反映費用。</div><section class="panel table-panel"><div class="panel-head"><h2>移轉記錄</h2><small>${out.length} 筆</small></div>${
+  return `<div class="notice">移轉同時調整兩端帳戶價值及投入本金。跨幣別以實際轉入金額記錄，兩端依轉出金額與匯率，同額增減台幣本金；無手續費欄位，請以實收金額反映費用。</div><section class="panel table-panel"><div class="panel-head"><h2>移轉記錄</h2><small>${out.length} 筆</small></div>${
     out.length
       ? `<div class="table-wrap"><table><thead><tr><th>日期</th><th>轉出 → 轉入</th><th class="num">轉出金額 / 本金</th><th class="num">轉入金額 / 本金</th><th>備註</th></tr></thead><tbody>${out
           .map((o) => {
@@ -325,7 +521,7 @@ function transferPage() {
 }
 function loanPage() {
   const loans = loansAt();
-  return `${stats()}<section class="panel table-panel"><div class="panel-head"><h2>貸款清單</h2><small>以貸款餘額計入負債</small></div>${loans.length ? `<div class="table-wrap"><table><thead><tr><th>貸款 / 持有人</th><th class="num">年利率</th><th class="num">剩餘本金（原幣）</th><th class="num">台幣餘額</th><th>最後記錄</th><th></th></tr></thead><tbody>${loans.map((l) => `<tr><td>${esc(l.name)}<small>${esc(holderName(l.holder_id))} · ${l.currency}</small></td><td class="num">${pct(l.annual_rate)}</td><td class="num">${l.lastDate ? fmt(l.balance, 2) : "尚無記錄"}</td><td class="num">${fmt(l.valueTwd)}</td><td>${l.lastDate || "—"}</td><td><button class="link-button" data-loan="${l.id}">更新餘額</button><button class="link-button" data-loan-history="${l.id}">歷史</button></td></tr>`).join("")}</tbody></table></div>` : empty("把負債也放進財務全貌", "建立房貸或其他貸款，定期記錄剩餘本金。", btn("新增貸款", "loan", true))}</section><p class="subtitle">貸款以餘額快照追蹤；利率供參考，不會自動計息或預估還款。</p>`;
+  return `${stats()}<section class="panel table-panel"><div class="panel-head"><h2>貸款清單</h2><small>以貸款餘額計入負債</small></div>${loans.length ? `<div class="table-wrap"><table><thead><tr><th>貸款 / 持有人</th><th class="num">剩餘本金（原幣）</th><th class="num">台幣餘額</th><th>最後記錄</th><th></th></tr></thead><tbody>${loans.map((l) => `<tr><td>${esc(l.name)}<small>${esc(holderName(l.holder_id))} · ${l.currency}</small></td><td class="num">${l.lastDate ? fmt(l.balance, 2) : "尚無記錄"}</td><td class="num">${fmt(l.valueTwd)}</td><td>${l.lastDate || "—"}</td><td><button class="link-button" data-loan="${l.id}">更新餘額</button><button class="link-button" data-loan-history="${l.id}">歷史</button></td></tr>`).join("")}</tbody></table></div>` : empty("把負債也放進財務全貌", "建立房貸或其他貸款，定期記錄剩餘本金。", btn("新增貸款", "loan", true))}</section><p class="subtitle">貸款以餘額快照追蹤，不會自動計息或預估還款。</p>`;
 }
 function goalPage() {
   return `<section class="panel"><div class="panel-head"><h2>每一步，都是累積</h2><small>全部以 TWD 設定</small></div>${goalsList()}</section>`;
@@ -392,22 +588,27 @@ const rateField = (name = "rate", value = 1) =>
       help: "台幣固定為 1；外幣請輸入記錄當日匯率。",
     },
   );
-const accountField = (name = "accountId", value = "") =>
+const accountField = (
+  name = "accountId",
+  value = "",
+  accounts = state.accounts,
+) =>
   field(
     name === "fromId" ? "轉出帳戶" : name === "toId" ? "轉入帳戶" : "投資帳戶",
     name,
     "",
-    value || state.accounts[0]?.id,
+    accounts.some((a) => a.id === value) ? value : accounts[0]?.id,
     {
       wide: name === "accountId",
-      options: state.accounts.map((a) => ({
+      options: accounts.map((a) => ({
         value: a.id,
         label: `${a.name} · ${holderName(a.holder_id)} · ${a.currency}`,
       })),
     },
   );
 function openForm(title, fields, endpoint, note = "", extra = {}) {
-  modal.classList.remove("large");
+  delete modal.dataset.detailAccount;
+  modal.classList.remove("large", "transfer-dialog");
   $("#modal-content").innerHTML =
     `<div class="modal-head"><h2>${title}</h2><button class="modal-close" data-close aria-label="關閉">×</button></div><form class="modal-body" id="entry-form">${note ? `<p class="form-note">${note}</p>` : ""}<div class="form-grid">${fields}</div><div class="form-error" role="alert"></div><div class="modal-actions"><button type="button" class="button" data-close>取消</button><button class="button primary" type="submit">儲存記錄</button></div></form>`;
   if (!modal.open) modal.showModal();
@@ -509,9 +710,17 @@ function showForm(kind, id) {
     return;
   }
   if (["valuation", "deposit", "withdrawal"].includes(kind)) {
+    const accounts =
+      kind === "valuation" && holder !== "all"
+        ? state.accounts.filter((a) => a.holder_id === holder)
+        : state.accounts;
+    if (!accounts.length) {
+      toast("這位持有人尚未建立投資帳戶，請先新增帳戶");
+      return;
+    }
     f = openForm(
       kindNames[kind],
-      accountField("accountId", id) +
+      accountField("accountId", id, accounts) +
         field("記錄日期", "date", "date", today()) +
         field(
           kind === "valuation" ? "帳戶總價值（原幣）" : "金額（原幣）",
@@ -523,7 +732,7 @@ function showForm(kind, id) {
         (kind === "withdrawal"
           ? field("提領本金（原幣，可留白）", "principal", "number", "", {
               required: false,
-              help: "預設為提領金額，最多扣至剩餘本金；獲利提領可填 0。",
+              help: "預設最多扣至可提領本金；本金非正數時預設為 0，獲利提領也可填 0。",
             })
           : "") +
         field("備註", "note", "text", "", { wide: true, required: false }),
@@ -537,49 +746,68 @@ function showForm(kind, id) {
     return;
   }
   if (kind === "transfer") {
-    if (state.accounts.length < 2) {
-      toast("請先建立至少兩個帳戶");
+    const accounts =
+      holder === "all"
+        ? state.accounts
+        : state.accounts.filter((a) => a.holder_id === holder);
+    if (accounts.length < 2) {
+      toast(
+        holder === "all"
+          ? "請先建立至少兩個帳戶"
+          : "這位持有人需至少有兩個帳戶才能移轉",
+      );
       return;
     }
     f = openForm(
       "帳戶資金移轉",
-      accountField("fromId", state.accounts[0].id) +
-        accountField("toId", state.accounts[1].id) +
+      `<div class="transfer-columns"><fieldset class="transfer-side"><legend>轉出 <span data-transfer-currency="from"></span></legend>${accountField("fromId", accounts[0].id, accounts)}${field("轉出金額（原幣）", "amount", "number", "")}</fieldset><fieldset class="transfer-side"><legend>轉入 <span data-transfer-currency="to"></span></legend>${accountField("toId", accounts[1].id, accounts)}${field("實際轉入金額（轉入原幣）", "received", "number", "")}</fieldset></div>` +
         field("移轉日期", "date", "date", today()) +
-        field("轉出金額（原幣）", "amount", "number", "") +
-        field("移轉本金（轉出原幣，可留白）", "principal", "number", "", {
-          required: false,
-          help: "預設為轉出金額，最多為剩餘本金。可自行指定。",
-        }) +
-        field("實際轉入金額（轉入原幣）", "received", "number", "") +
-        rateField("fromRate") +
-        rateField("toRate") +
-        field("轉入本金（轉入原幣）", "targetPrincipal", "number", "", {
-          help: "跨幣別請填寫對應本金；原始台幣成本仍保持不變。",
-        }) +
-        field("備註", "note", "text", "", { required: false }),
+        field("備註", "note", "text", "", { required: false }) +
+        `<details class="transfer-rates"><summary>匯率設定 <span data-rate-summary></span></summary><p>匯率為 1 單位原幣等於多少台幣。預設沿用各帳戶最近匯率，台幣固定為 1。</p><div class="form-grid">${rateField("fromRate")}${rateField("toRate")}</div></details>`,
       "transfers",
-      "兩個帳戶的價值與本金會一起儲存。同幣別轉入等於轉出；跨幣別請填實收金額。移轉後的資產變化也可能反映費用與匯率差異。",
+      "本金隨實際金額增減，內部移轉不增加整體投入本金。本金可為負數，並非負債。",
       { requestKey: crypto.randomUUID() },
     );
+    modal.classList.add("transfer-dialog");
+    f.addEventListener(
+      "invalid",
+      (event) => {
+        const details = event.target.closest("details");
+        if (details) details.open = true;
+      },
+      true,
+    );
+    const rateSummary = () => {
+      f.querySelector("[data-rate-summary]").textContent =
+        `${f.querySelector('[data-transfer-currency="from"]').textContent} ${f.elements.fromRate.value} · ${f.querySelector('[data-transfer-currency="to"]').textContent} ${f.elements.toRate.value}（兌台幣）`;
+    };
     const sync = () => {
       const a = state.accounts.find((a) => a.id === f.elements.fromId.value),
         b = state.accounts.find((a) => a.id === f.elements.toId.value),
         same = a.currency === b.currency;
+      f.querySelector('[data-transfer-currency="from"]').textContent =
+        a.currency;
+      f.querySelector('[data-transfer-currency="to"]').textContent = b.currency;
       for (const [name, account] of [
         ["fromRate", a],
         ["toRate", b],
       ]) {
         f.elements[name].readOnly = account.currency === "TWD";
-        f.elements[name].value = accountState(account, state.events).rate / FX;
+        const p = (state.portfolios || []).find(
+          (p) => p.account_id === account.id && p.mode === "holdings",
+        );
+        f.elements[name].value =
+          (p ? p.rate : accountState(account, state.events).rate) / FX;
       }
-      for (const name of ["received", "targetPrincipal"]) {
+      for (const name of ["received"]) {
         f.elements[name].readOnly = same;
         f.elements[name].required = !same;
       }
       f.elements.received.value = same ? f.elements.amount.value : "";
-      f.elements.targetPrincipal.value = same ? "0" : "";
+      rateSummary();
     };
+    f.elements.fromRate.addEventListener("input", rateSummary);
+    f.elements.toRate.addEventListener("input", rateSummary);
     f.elements.fromId.onchange = sync;
     f.elements.toId.onchange = sync;
     f.elements.amount.oninput = () => {
@@ -595,7 +823,6 @@ function showForm(kind, id) {
       field("貸款名稱", "name", "text", "", { wide: true }) +
         holderField() +
         currencyField() +
-        field("年利率（%）", "annualRate", "number", "") +
         field("記錄日期", "date", "date", today()) +
         field("剩餘本金（原幣）", "balance", "number", "") +
         rateField(),
@@ -650,6 +877,7 @@ function showForm(kind, id) {
   }
 }
 function detail(id) {
+  modal.dataset.detailAccount = id;
   const a = accountState(
       state.accounts.find((a) => a.id === id),
       state.events,
@@ -660,8 +888,32 @@ function detail(id) {
       .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
   modal.classList.add("large");
   $("#modal-content").innerHTML =
-    `<div class="modal-head"><h2>${esc(a.name)}</h2><button class="modal-close" data-close aria-label="關閉">×</button></div><div class="modal-body"><p class="subtitle">${esc(holderName(a.holder_id))} · ${a.currency} · 截至 ${asOf}</p><div class="detail-summary"><div>投入本金<strong>${fmt(a.cost, 2)}</strong></div><div>帳戶價值<strong>${fmt(a.value, 2)}</strong></div><div>歷史台幣成本<strong>${fmt(a.costTwd)}</strong></div></div><div class="actions"><button class="button primary" data-entry="valuation" data-account="${id}">記錄估值</button><button class="button" data-entry="deposit" data-account="${id}">投入資金</button><button class="button" data-entry="withdrawal" data-account="${id}">提領資金</button></div><div class="table-wrap"><table class="history-table"><thead><tr><th>日期 / 類型</th><th class="num">價值 / 異動</th><th class="num">本金異動</th><th class="num">匯率</th><th>備註</th><th></th></tr></thead><tbody>${events.map((e) => `<tr><td>${e.date}<small>${kindNames[e.kind]}</small></td><td class="num">${fmt(e.amount, 2)}</td><td class="num">${fmt(e.cost_delta, 2)}</td><td class="num">${e.rate / FX}</td><td>${esc(e.note)}</td><td>${["valuation", "deposit", "withdrawal"].includes(e.kind) ? `<button class="link-button danger" data-delete-table="events" data-delete-id="${e.id}" data-reopen="${id}">刪除</button>` : ""}</td></tr>`).join("")}</tbody></table></div><p class="subtitle">估值為完整價值，其餘記錄為增減金額。更正記錄可刪除後重新建立；開戶與移轉記錄保留作為資金軌跡。</p></div>`;
-  modal.showModal();
+    `<div class="modal-head"><h2>${esc(a.name)}</h2><button class="modal-close" data-close aria-label="關閉">×</button></div><div class="modal-body"><p class="subtitle">${esc(holderName(a.holder_id))} · ${a.currency} · 截至 ${asOf}</p><div class="detail-summary"><div>投入本金<strong>${fmt(a.cost, a.currency === "USD" ? 2 : 0)}</strong></div><div>已儲存帳戶價值<strong>${fmt(a.value, a.currency === "USD" ? 2 : 0)}</strong></div><div>累計台幣投入本金<strong>${fmt(a.costTwd)}</strong></div><div>已儲存估值損益<strong>${fmt(a.valueTwd - a.costTwd)}</strong><small>${returnLabel(a.valueTwd - a.costTwd, a.cost > 0 ? a.costTwd : 0)}</small></div></div>${
+      asOf === today()
+        ? portfolioPanel(
+            a,
+            (state.portfolios || []).find((p) => p.account_id === id),
+            liveEstimates.get(id),
+          )
+        : portfolioEligible(a)
+          ? '<p class="form-note">歷史日期只顯示已儲存估值；切回今天可查看目前的現金與持股估算。</p>'
+          : ""
+    }<div class="actions"><button class="button primary" data-entry="valuation" data-account="${id}">記錄估值</button><button class="button" data-entry="deposit" data-account="${id}">投入資金</button><button class="button" data-entry="withdrawal" data-account="${id}">提領資金</button></div><div class="table-wrap"><table class="history-table"><thead><tr><th>日期 / 類型</th><th class="num">價值 / 異動</th><th class="num">本金異動</th><th class="num">匯率</th><th>備註</th><th></th></tr></thead><tbody>${events.map((e) => `<tr><td>${e.date}<small>${kindNames[e.kind]}</small></td><td class="num">${fmt(e.amount, a.currency === "USD" ? 2 : 0)}</td><td class="num">${fmt(e.cost_delta, a.currency === "USD" ? 2 : 0)}</td><td class="num">${e.rate / FX}</td><td>${esc(e.note)}${e.portfolio_estimate_id ? `<button class="link-button" data-portfolio-snapshot="${e.id}">查看持股快照</button>` : ""}</td><td>${["valuation", "deposit", "withdrawal"].includes(e.kind) ? `<button class="link-button danger" data-delete-table="events" data-delete-id="${e.id}" data-reopen="${id}">刪除</button>` : ""}</td></tr>`).join("")}</tbody></table></div><p class="subtitle">估值為完整價值，其餘記錄為增減金額。本金可為負數，表示累計移出超過投入，並非負債；本金非正數時不顯示報酬率。更正記錄可刪除後重新建立；開戶與移轉記錄保留作為資金軌跡。</p></div>`;
+  if (!modal.open) modal.showModal();
+  const current = liveEstimates.get(id);
+  if (
+    asOf === today() &&
+    (state.portfolios || []).some(
+      (p) => p.account_id === id && p.mode === "holdings",
+    ) &&
+    estimateNeedsRefresh(current) &&
+    !estimateLoading &&
+    !estimateError
+  )
+    queueMicrotask(() => {
+      if (modal.open && modal.dataset.detailAccount === id && !estimateLoading)
+        void loadEstimates([id]);
+    });
 }
 function loanHistory(id) {
   const l = state.loans.find((l) => l.id === id),
@@ -674,6 +926,7 @@ function loanHistory(id) {
   modal.showModal();
 }
 async function login() {
+  setThemeUser(null);
   const messages = {
     config: "尚未設定 Google 登入，請設定 Google Client ID 與 Client Secret。",
     state: "登入驗證已失效，請重新登入。",
@@ -763,7 +1016,6 @@ async function sample() {
       holderId: h,
       name: "示範住宅房貸",
       currency: "TWD",
-      annualRate: 2.2,
       date: start,
       balance: 1800000,
       rate: 1,
@@ -845,10 +1097,80 @@ document.addEventListener("click", async (e) => {
       }
       return;
     }
+    if (t.dataset.portfolioEdit) {
+      const id = t.dataset.portfolioEdit,
+        a = accountState(
+          state.accounts.find((a) => a.id === id),
+          state.events,
+          today(),
+        );
+      delete modal.dataset.detailAccount;
+      openPortfolioEditor({
+        account: a,
+        portfolio: (state.portfolios || []).find((p) => p.account_id === id),
+        holdings: (state.holdings || []).filter((h) => h.account_id === id),
+        api,
+        today: today(),
+        onSaved: async () => {
+          await refresh();
+          detail(id);
+        },
+      });
+      return;
+    }
+    if (t.dataset.portfolioRefresh) {
+      if (estimateLoading) {
+        toast("行情更新中，請稍候");
+        return;
+      }
+      await loadEstimates([t.dataset.portfolioRefresh]);
+      return;
+    }
+    if (t.dataset.portfolioSave) {
+      if (busy) return;
+      if (estimateLoading) {
+        toast("行情更新中，完成後即可儲存快照");
+        return;
+      }
+      const id = t.dataset.portfolioSave;
+      const previous = liveEstimates.get(id);
+      if (!previous?.complete) {
+        toast("請先取得完整估值");
+        return;
+      }
+      busy = true;
+      t.disabled = true;
+      try {
+        const e = (await loadEstimates([id]))?.get(id);
+        if (!e?.complete || !e.id)
+          throw new Error("行情更新未完成，請稍後再儲存快照");
+        await api("portfolio-snapshot", { accountId: id, estimateId: e.id });
+        modal.close();
+        await refresh();
+        detail(id);
+        toast("已儲存今日估值，投入本金未變更");
+      } finally {
+        busy = false;
+        t.disabled = false;
+      }
+      return;
+    }
+    if (t.dataset.portfolioSnapshot) {
+      const s = (state.portfolio_snapshots || []).find(
+        (s) => s.event_id === Number(t.dataset.portfolioSnapshot),
+      );
+      if (s) {
+        delete modal.dataset.detailAccount;
+        openSnapshot(s);
+      }
+      return;
+    }
     const a = t.dataset.action;
+    if (a === "theme") return;
     if (a === "logout") {
       await api("auth/logout", {});
       state = null;
+      resetCashDraft();
       config = await api("config");
       login();
     } else if (a === "export") {
@@ -869,18 +1191,36 @@ document.addEventListener("click", async (e) => {
     toast(err.message);
   }
 });
-modal.addEventListener("click", (e) => {
-  if (e.target === modal) {
-    const r = modal.getBoundingClientRect();
-    if (
-      e.clientX < r.left ||
+modal.addEventListener("close", () => {
+  modal.classList.remove("transfer-dialog");
+  delete modal.dataset.detailAccount;
+});
+let backdropPressed = false;
+const outsideModal = (e) => {
+  const r = modal.getBoundingClientRect();
+  return (
+    e.target === modal &&
+    (e.clientX < r.left ||
       e.clientX > r.right ||
       e.clientY < r.top ||
-      e.clientY > r.bottom
-    )
-      modal.close();
-  }
+      e.clientY > r.bottom)
+  );
+};
+modal.addEventListener("pointerdown", (e) => {
+  backdropPressed = e.button === 0 && outsideModal(e);
 });
+modal.addEventListener("pointercancel", () => {
+  backdropPressed = false;
+});
+modal.addEventListener("close", () => {
+  backdropPressed = false;
+});
+modal.addEventListener("click", (e) => {
+  const dismiss = backdropPressed && outsideModal(e);
+  backdropPressed = false;
+  if (dismiss) modal.close();
+});
+
 try {
   config = await api("config");
   if (config.dev) login();
