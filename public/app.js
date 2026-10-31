@@ -1,3 +1,4 @@
+import { monthlyTrendDates } from "./chart-dates.js";
 import {setThemeUser, themeTrigger} from "./themes.js";
 import { mountCashPlan, resetCashDraft } from "./cash-plan-ui.js";
 import {
@@ -347,26 +348,19 @@ function chart() {
   const relevant = state.accounts
     .filter((a) => holder === "all" || a.holder_id === holder)
     .map((a) => a.id);
-  let days = [
+  const recordedDays = [
     ...new Set(
       state.events
         .filter((e) => relevant.includes(e.account_id) && e.date <= asOf)
         .map((e) => e.date),
     ),
   ].sort();
-  if (!days.length)
+  if (!recordedDays.length)
     return empty(
       "從第一筆估值開始",
       "新增帳戶與定期估值後，即可追蹤資產的變化。",
     );
-  if (days[days.length - 1] !== asOf) days.push(asOf);
-  if (days.length > 24) {
-    const all = days;
-    days = Array.from(
-      { length: 24 },
-      (_, i) => all[Math.round((i * (all.length - 1)) / 23)],
-    );
-  }
+  const days = monthlyTrendDates(recordedDays[0], asOf);
   const points = days.map((day) => ({ day, ...totals(day, holder, false) })),
     max = Math.max(...points.flatMap((p) => [p.value, p.cost]), 100),
     min = Math.min(0, ...points.map((p) => p.cost)),
@@ -396,7 +390,7 @@ function chart() {
     })
     .join(
       "",
-    )}<path d="${path("value")} L${x(points.length - 1)},${bottom} L${left},${bottom} Z" fill="url(#area)"/><path d="${path("cost")}" stroke="var(--chart-cost, #c0c8b5)" stroke-width="1.6" stroke-dasharray="5 5" fill="none"/><path d="${path("value")}" stroke="var(--chart, #46775a)" stroke-width="2.7" fill="none"/>${points.map((p, i) => `<circle cx="${x(i)}" cy="${y(p.value)}" r="3" fill="var(--chart, #46775a)"><title>${p.day}：NT$ ${fmt(p.value)}</title></circle>`).join("")}</svg>${axisLabels.join("")}${[...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])].map((i) => `<span class="chart-axis-x" style="left:${(x(i) / W) * 100}%;top:${(198 / H) * 100}%;--axis-offset:${i === 0 ? "0%" : i === points.length - 1 ? "-100%" : "-50%"}">${points[i].day}</span>`).join("")}</div><div class="chart-note">沿用最近一次估值與匯率；損益包含匯率變化，不是年化報酬。</div>`;
+    )}<path d="${path("value")} L${x(points.length - 1)},${bottom} L${left},${bottom} Z" fill="url(#area)"/><path d="${path("cost")}" stroke="var(--chart-cost, #c0c8b5)" stroke-width="1.6" stroke-dasharray="5 5" fill="none"/><path d="${path("value")}" stroke="var(--chart, #46775a)" stroke-width="2.7" fill="none"/>${points.map((p, i) => `<circle cx="${x(i)}" cy="${y(p.value)}" r="3" fill="var(--chart, #46775a)"><title>${p.day}：NT$ ${fmt(p.value)}</title></circle>`).join("")}</svg>${axisLabels.join("")}${[...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])].map((i) => `<span class="chart-axis-x" style="left:${(x(i) / W) * 100}%;top:${(198 / H) * 100}%;--axis-offset:${i === 0 ? "0%" : i === points.length - 1 ? "-100%" : "-50%"}">${points[i].day}</span>`).join("")}</div><div class="chart-note">每月底及檢視日期取點，沿用截至當日最近一次估值與匯率；損益包含匯率變化，不是年化報酬。</div>`;
 }
 function allocation() {
   const a = accountsAt(),
