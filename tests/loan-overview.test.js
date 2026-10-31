@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import {toTwd,FX} from '../public/domain.js';
 const source=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
-const functions=source.slice(source.indexOf('function loansAt('),source.indexOf('function totals('))+source.slice(source.indexOf('function loanTable('),source.indexOf('function goalPage('));
+const functions=source.slice(source.indexOf('function loansAt('),source.indexOf('function totals('))+source.slice(source.indexOf('function loanTable('),source.indexOf('function holderPage('));
 function render(holder,asOf='2026-10-31'){
  return runInNewContext(functions+';loanTable()',{
   holder,asOf,FX,toTwd,esc:String,fmt:String,holderName:id=>id,

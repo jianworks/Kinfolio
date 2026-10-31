@@ -260,20 +260,19 @@ function render() {
     overview: "資產總覽",
     accounts: "投資帳戶",
     transfers: "資金移轉",
-    goals: "資產目標",
     holders: "持有人",
   };
   app.innerHTML = `<div class="shell"><aside class="sidebar">${brand()}<nav class="nav" aria-label="主選單">${Object.entries(
     labels,
   )
-    .filter(([key]) => key !== "accounts")
+    .filter(([key]) => !["accounts", "transfers", "holders"].includes(key))
     .map(
       ([key, label]) =>
         `<button data-page="${key}" class="${page === key ? "active" : ""}" ${page === key ? 'aria-current="page"' : ""}>${icon(key)}${label}</button>`,
     )
     .join(
       "",
-    )}</nav>${themeTrigger()}<div class="sidebar-bottom"><div class="user"><div class="avatar">${esc(state.user.name.slice(0, 1))}</div><span>${esc(state.user.name)}</span><button class="logout" data-action="logout">登出</button></div></div></aside><main class="main"><div class="workspace" data-view="${page}"><div class="heading"><div><div class="eyebrow">YOUR WEALTH, IN PERSPECTIVE</div><h1>${labels[page]}</h1><p class="subtitle">${{ cash: "用每月收支，掌握需要保留的現金。", overview: holder === "all" ? "每個人的資產，各自清楚掌握。" : "讓每一份資產，都有清楚的全貌。", accounts: "追蹤投入本金、帳戶價值與投資成果。", transfers: "串起帳戶之間的資金與本金流向。", goals: "為每位持有人，設定下一個里程碑。", holders: "分別管理每位家人的資產與目標。" }[page]}</p></div><div class="actions">${page === "cash" ? '<button class="button primary" id="cash-settings-open">設定現金規劃</button>' : page === "overview" ? (holder === "all" ? btn("新增持有人", "holder", true) : btn("資金移轉", "transfer", false, "transfers") + btn("記錄估值", "valuation", true)) : page === "accounts" ? btn("新增帳戶", "account", true) : page === "transfers" ? btn("新增移轉", "transfer", true) : page === "goals" ? btn("新增目標", "goal", true) : btn("新增持有人", "holder", true)}</div></div>${config.dev ? '<div class="notice">本機開發模式 · 資料儲存在本機 D1，正式部署一律使用 Google 登入。 <button class="link-button" data-action="sample">建立示範資料</button></div>' : ""}<div class="filters" ${page === "cash" ? "hidden" : ""}><div class="tabs" aria-label="持有人篩選"><button data-holder="all" class="${holder === "all" ? "selected" : ""}">全部持有人</button>${state.holders.map((h) => `<button data-holder="${h.id}" class="${holder === h.id ? "selected" : ""}">${esc(h.name)}</button>`).join("")}</div><label class="date-filter">檢視日期 <input id="as-of" type="date" max="${today()}" value="${asOf}" aria-label="檢視日期"></label></div>${page === "cash" ? "" : liveEstimateNotice()}${{ cash: () => '<div id="cash-plan-root"></div>', overview: overview, accounts: accountPage, transfers: transferPage, goals: goalPage, holders: holderPage }[page]()}<footer class="footer"><span>${page === "cash" ? "家計 Kinfolio · 台幣月度現金流估算" : "家計 Kinfolio · 依各帳戶最近記錄彙總，非即時行情"}${page !== "cash" ? ' · 匯率：<a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer">ExchangeRate-API</a>' : ""}</span><button data-action="export">${icon("download")} 匯出資料備份</button></footer></div></main></div>`;
+    )}</nav>${themeTrigger()}<div class="sidebar-bottom"><div class="user"><div class="avatar">${esc(state.user.name.slice(0, 1))}</div><span>${esc(state.user.name)}</span><button class="logout" data-action="logout">登出</button></div></div></aside><main class="main"><div class="workspace" data-view="${page}"><div class="heading"><div><div class="eyebrow">YOUR WEALTH, IN PERSPECTIVE</div><h1>${labels[page]}</h1><p class="subtitle">${{ cash: "用每月收支，掌握需要保留的現金。", overview: holder === "all" ? "每個人的資產，各自清楚掌握。" : "讓每一份資產，都有清楚的全貌。", accounts: "追蹤投入本金、帳戶價值與投資成果。", transfers: "串起帳戶之間的資金與本金流向。", holders: "分別管理每位家人的資產與目標。" }[page]}</p></div><div class="actions">${page === "cash" ? '<button class="button primary" id="cash-settings-open">設定現金規劃</button>' : page === "overview" ? (holder === "all" ? btn("移轉記錄", "transfer-history", false, "transfers") : btn("資金移轉", "transfer", false, "transfers") + btn("記錄估值", "valuation", true)) : page === "accounts" ? btn("新增帳戶", "account", true) : page === "transfers" ? btn("新增移轉", "transfer", true) : btn("新增持有人", "holder", true)}</div></div>${config.dev ? '<div class="notice">本機開發模式 · 資料儲存在本機 D1，正式部署一律使用 Google 登入。 <button class="link-button" data-action="sample">建立示範資料</button></div>' : ""}<div class="filters" ${page === "cash" ? "hidden" : ""}><div class="tabs" aria-label="持有人篩選"><button data-holder="all" class="${holder === "all" ? "selected" : ""}">全部持有人</button>${state.holders.map((h) => `<button data-holder="${h.id}" class="${holder === h.id ? "selected" : ""}">${esc(h.name)}</button>`).join("")}</div><label class="date-filter">檢視日期 <input id="as-of" type="date" max="${today()}" value="${asOf}" aria-label="檢視日期"></label></div>${page === "cash" ? "" : liveEstimateNotice()}${{ cash: () => '<div id="cash-plan-root"></div>', overview: overview, accounts: accountPage,  holders: holderPage }[page]()}<footer class="footer"><span>${page === "cash" ? "家計 Kinfolio · 台幣月度現金流估算" : "家計 Kinfolio · 依各帳戶最近記錄彙總，非即時行情"}${page !== "cash" ? ' · 匯率：<a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer">ExchangeRate-API</a>' : ""}</span><button data-action="export">${icon("download")} 匯出資料備份</button></footer></div></main></div>`;
   if (page === "cash")
     mountCashPlan({
       root: $("#cash-plan-root"),
@@ -406,7 +405,7 @@ function allocation() {
 }
 function accountTable() {
   const a = accountsAt();
-  return `<section class="panel table-panel"><div class="panel-head"><h2>投資帳戶 <small> / ${a.length}</small></h2><button class="link-button" data-action="account">＋ 新增帳戶</button></div>${!a.length ? empty("建立你的第一個投資帳戶", "支援台幣、美金與日幣，按持有人分別追蹤。", btn("新增帳戶", "account", true)) : `<div class="table-wrap"><table><thead><tr><th>帳戶 / 持有人</th><th>類型</th><th class="num">投入本金（原幣）</th><th class="num">帳戶價值（原幣）</th><th class="num">台幣價值</th><th class="num">損益（台幣）</th><th></th></tr></thead><tbody>${a.map((a) => `<tr><td><div class="account-name"><span class="account-symbol">${a.currency === "TWD" ? "台" : a.currency === "USD" ? "美" : "日"}</span><div>${esc(a.name)}<small>${esc(holderName(a.holder_id))} · ${a.currency}</small></div></div></td><td><span class="tag">${a.type}</span></td><td class="num">${fmt(a.cost, a.currency === "USD" ? 2 : 0)}</td><td class="num">${fmt(a.value, a.currency === "USD" ? 2 : 0)}<small>${a.live ? "最後更新 " + estimateTime(a.estimateUpdatedAt) + (a.liveWarning ? "（沿用最近行情）" : "") : a.lastDate}${a.currency === "TWD" ? "" : " · 匯率 " + a.rate / FX}</small></td><td class="num">${fmt(a.valueTwd)}</td><td class="num ${a.valueTwd - a.costTwd < 0 ? "down" : "up"}">${a.valueTwd - a.costTwd >= 0 ? "+" : ""}${fmt(a.valueTwd - a.costTwd)}<small>${returnLabel(a.valueTwd - a.costTwd, a.cost > 0 ? a.costTwd : 0)}</small></td><td><button class="link-button" data-detail="${a.id}">明細 ↗</button></td></tr>`).join("")}</tbody></table></div>`}</section>`;
+  return `<section class="panel table-panel"><div class="panel-head"><h2>投資帳戶 <small> / ${a.length}</small></h2><div class="actions"><button class="link-button transfer-history-trigger" data-action="transfer-history">${icon("transfers")}移轉記錄</button><button class="link-button" data-action="account">＋ 新增帳戶</button></div></div>${!a.length ? empty("建立你的第一個投資帳戶", "支援台幣、美金與日幣，按持有人分別追蹤。", btn("新增帳戶", "account", true)) : `<div class="table-wrap"><table><thead><tr><th>帳戶 / 持有人</th><th>類型</th><th class="num">投入本金（原幣）</th><th class="num">帳戶價值（原幣）</th><th class="num">台幣價值</th><th class="num">損益（台幣）</th><th></th></tr></thead><tbody>${a.map((a) => `<tr><td><div class="account-name"><span class="account-symbol">${a.currency === "TWD" ? "台" : a.currency === "USD" ? "美" : "日"}</span><div>${esc(a.name)}<small>${esc(holderName(a.holder_id))} · ${a.currency}</small></div></div></td><td><span class="tag">${a.type}</span></td><td class="num">${fmt(a.cost, a.currency === "USD" ? 2 : 0)}</td><td class="num">${fmt(a.value, a.currency === "USD" ? 2 : 0)}<small>${a.live ? "最後更新 " + estimateTime(a.estimateUpdatedAt) + (a.liveWarning ? "（沿用最近行情）" : "") : a.lastDate}${a.currency === "TWD" ? "" : " · 匯率 " + a.rate / FX}</small></td><td class="num">${fmt(a.valueTwd)}</td><td class="num ${a.valueTwd - a.costTwd < 0 ? "down" : "up"}">${a.valueTwd - a.costTwd >= 0 ? "+" : ""}${fmt(a.valueTwd - a.costTwd)}<small>${returnLabel(a.valueTwd - a.costTwd, a.cost > 0 ? a.costTwd : 0)}</small></td><td><button class="link-button" data-detail="${a.id}">明細 ↗</button></td></tr>`).join("")}</tbody></table></div>`}</section>`;
 }
 function goalsList() {
   const goals = state.goals.filter(
@@ -418,7 +417,7 @@ function goalsList() {
           const t = totals(asOf, g.holder_id),
             value = g.basis === "net" ? t.net : t.value,
             p = Math.max(0, (value / g.target) * 100);
-          return `<div><div class="goal-title"><span>${esc(g.name)}</span><strong>${pct(p)}</strong></div><div class="goal-meta"><span>${esc(holderName(g.holder_id))} · ${g.basis === "net" ? "淨資產" : "總資產"}</span><span>${g.date}</span></div><div class="progress"><div class="progress-fill" data-progress="${Math.min(p, 100)}"></div></div><div class="goal-meta"><span>NT$ ${fmt(value)} / ${fmt(g.target)}</span><span>${p >= 100 ? "已達成" : "差額 " + fmt(Math.max(0, g.target - value))}</span></div>${page === "goals" ? `<button class="link-button danger" data-delete-table="goals" data-delete-id="${g.id}">刪除目標</button>` : ""}</div>`;
+          return `<div><div class="goal-title"><span>${esc(g.name)}</span><strong>${pct(p)}</strong></div><div class="goal-meta"><span>${esc(holderName(g.holder_id))} · ${g.basis === "net" ? "淨資產" : "總資產"}</span><span>${g.date}</span></div><div class="progress"><div class="progress-fill" data-progress="${Math.min(p, 100)}"></div></div><div class="goal-meta"><span>NT$ ${fmt(value)} / ${fmt(g.target)}</span><span>${p >= 100 ? "已達成" : "差額 " + fmt(Math.max(0, g.target - value))}</span></div><button class="link-button danger" data-delete-table="goals" data-delete-id="${g.id}">刪除目標</button></div>`;
         })
         .join("")}</div>`
     : empty(
@@ -469,7 +468,7 @@ function holdersOverview() {
               .map((g) => {
                 const current = g.basis === "net" ? t.net : t.value,
                   progress = Math.max(0, (current / g.target) * 100);
-                return `<div><div class="goal-title"><span>${esc(g.name)}</span><strong>${pct(progress)}</strong></div><div class="goal-meta"><span>${g.basis === "net" ? "淨資產" : "總資產"}目標 · ${g.date}</span></div><div class="progress"><div class="progress-fill" data-progress="${Math.min(progress, 100)}"></div></div><div class="goal-meta"><span>NT$ ${fmt(current)} / ${fmt(g.target)}</span><span>${progress >= 100 ? "已達成" : "差額 " + fmt(Math.max(0, g.target - current))}</span></div></div>`;
+                return `<div><div class="goal-title"><span>${esc(g.name)}</span><strong>${pct(progress)}</strong></div><div class="goal-meta"><span>${g.basis === "net" ? "淨資產" : "總資產"}目標 · ${g.date}</span></div><div class="progress"><div class="progress-fill" data-progress="${Math.min(progress, 100)}"></div></div><div class="goal-meta"><span>NT$ ${fmt(current)} / ${fmt(g.target)}</span><span>${progress >= 100 ? "已達成" : "差額 " + fmt(Math.max(0, g.target - current))}</span></div><button class="link-button danger" data-delete-table="goals" data-delete-id="${g.id}">刪除目標</button></div>`;
               })
               .join("")}</div>`
           : '<p class="subtitle">尚未設定目標</p>'
@@ -480,7 +479,7 @@ function holdersOverview() {
 function accountPage() {
   return stats() + accountTable();
 }
-function transferPage() {
+function transferHistoryTable() {
   const ids = state.accounts
       .filter((a) => holder === "all" || a.holder_id === holder)
       .map((a) => a.id),
@@ -492,7 +491,7 @@ function transferPage() {
           (ids.includes(e.account_id) ||
             state.events.some(
               (i) =>
-                i.transfer_id === e.transfer_id && ids.includes(i.account_id),
+                i.kind === "transfer_in" && i.transfer_id === e.transfer_id && ids.includes(i.account_id),
             )),
       )
       .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
@@ -512,12 +511,47 @@ function transferPage() {
       : empty("還沒有帳戶移轉", "先建立至少兩個帳戶，再記錄資金流向。")
   }</section>`;
 }
+let transferHistoryDialog, transferHistoryTrigger, returnToTransferHistory = false;
+function openTransferHistory(trigger) {
+  transferHistoryTrigger = trigger;
+  if (!transferHistoryDialog) {
+    transferHistoryDialog = document.createElement("dialog");
+    transferHistoryDialog.className = "transfer-history-dialog large";
+    transferHistoryDialog.setAttribute("aria-labelledby", "transfer-history-title");
+    document.body.append(transferHistoryDialog);
+    transferHistoryDialog.addEventListener("click", e => {
+      if (e.target.closest("[data-history-close]")) transferHistoryDialog.close();
+      if (e.target.closest("[data-history-create]")) {
+        showForm("transfer");
+        if (modal.open) {
+          returnToTransferHistory = true;
+          transferHistoryDialog.close();
+        }
+      }
+    });
+    let backdrop = false;
+    const outside = e => {
+      const r = transferHistoryDialog.getBoundingClientRect();
+      return e.target === transferHistoryDialog && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom);
+    };
+    transferHistoryDialog.addEventListener("pointerdown", e => { backdrop = e.button === 0 && outside(e); });
+    transferHistoryDialog.addEventListener("pointercancel", () => { backdrop = false; });
+    transferHistoryDialog.addEventListener("click", e => { if (backdrop && outside(e)) transferHistoryDialog.close(); backdrop = false; });
+    transferHistoryDialog.addEventListener("close", () => {
+      backdrop = false;
+      if (!returnToTransferHistory) {
+        const target = transferHistoryTrigger?.isConnected ? transferHistoryTrigger : document.querySelector('[data-action="transfer-history"]');
+        target?.focus();
+      }
+    });
+  }
+  const context = holder === "all" ? "全部持有人" : holderName(holder);
+  transferHistoryDialog.innerHTML = `<div class="modal-head"><h2 id="transfer-history-title">移轉記錄</h2><button class="modal-close" data-history-close aria-label="關閉移轉記錄">×</button></div><div class="modal-body"><div class="transfer-history-toolbar"><p class="subtitle">${esc(context)} · 截至 ${asOf}</p><button class="button primary" data-history-create>＋ 新增移轉</button></div>${transferHistoryTable()}</div>`;
+  if (!transferHistoryDialog.open) transferHistoryDialog.showModal();
+}
 function loanTable() {
   const loans = loansAt();
   return `<section class="panel table-panel loan-table"><div class="panel-head"><h2>貸款清單 <small> / ${loans.length}</small></h2><button class="link-button" data-action="loan">＋ 新增貸款</button></div>${loans.length ? `<div class="table-wrap"><table><thead><tr><th>貸款 / 持有人</th><th class="num">剩餘本金（原幣）</th><th class="num">台幣餘額</th><th>最後記錄</th><th></th></tr></thead><tbody>${loans.map((l) => `<tr><td>${esc(l.name)}<small>${esc(holderName(l.holder_id))} · ${l.currency}</small></td><td class="num">${l.lastDate ? fmt(l.balance, 2) : "尚無記錄"}</td><td class="num">${l.lastDate ? fmt(l.valueTwd) : "尚無記錄"}</td><td>${l.lastDate || "—"}</td><td><button class="link-button" data-loan="${l.id}">更新餘額</button><button class="link-button" data-loan-history="${l.id}">歷史</button></td></tr>`).join("")}</tbody></table></div>` : empty("把負債也放進財務全貌", "建立房貸或其他貸款，定期記錄剩餘本金。", btn("新增貸款", "loan", true))}</section><p class="subtitle">貸款以餘額快照追蹤，不會自動計息或預估還款。</p>`;
-}
-function goalPage() {
-  return `<section class="panel"><div class="panel-head"><h2>每一步，都是累積</h2><small>全部以 TWD 設定</small></div>${goalsList()}</section>`;
 }
 function holderPage() {
   const holders = state.holders.filter(
@@ -1160,6 +1194,7 @@ document.addEventListener("click", async (e) => {
     }
     const a = t.dataset.action;
     if (a === "theme") return;
+    if (a === "transfer-history") { openTransferHistory(t); return; }
     if (a === "logout") {
       await api("auth/logout", {});
       state = null;
@@ -1187,6 +1222,10 @@ document.addEventListener("click", async (e) => {
 modal.addEventListener("close", () => {
   modal.classList.remove("transfer-dialog");
   delete modal.dataset.detailAccount;
+  if (returnToTransferHistory) {
+    returnToTransferHistory = false;
+    if (state) openTransferHistory(transferHistoryTrigger);
+  }
 });
 let backdropPressed = false;
 const outsideModal = (e) => {

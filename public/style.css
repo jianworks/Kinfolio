@@ -1593,3 +1593,9 @@ dialog.large {
 .workspace[data-view="holders"] .holder-card p strong { white-space: nowrap; }
 .workspace[data-view="transfers"] td small,
 .workspace[data-view="goals"] .goal-meta { line-height: 1.6; }
+.transfer-history-trigger { display: inline-flex; align-items: center; gap: 6px; }
+.transfer-history-trigger svg { width: 16px; height: 16px; }
+.transfer-history-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+.transfer-history-toolbar p { margin: 0; }
+.transfer-history-dialog :is(table, th, td, td small, .subtitle, .notice, .panel-head small, .button) { font-size: var(--data-font-size); }
+.transfer-history-dialog td small { line-height: 1.6; }
