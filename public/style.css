@@ -7,6 +7,7 @@
   --muted: #7a8780;
   --line: #e3e8e1;
   --red: #b34f4f;
+  --data-font-size: 13px;
 }
 [hidden] {
   display: none !important;
@@ -146,7 +147,7 @@
 .cash-editor .cash-table th,
 .cash-editor .cash-table td,
 .cash-editor .cash-table input {
-  font-size: 13px;
+  font-size: var(--data-font-size);
 }
 .cash-table th,
 .cash-table td {
@@ -1561,3 +1562,34 @@ dialog.large {
     padding: 18px;
   }
 }
+
+/* Main information uses the same baseline as the 12-month cash table. */
+.workspace:is([data-view="overview"], [data-view="transfers"], [data-view="goals"], [data-view="holders"]) :is(
+  table, th, td, td small, .account-name, .tag, .link-button,
+  .legend, .chart-axis-x, .chart-axis-y, .chart-note,
+  .donut-hole small, .alloc-row, .panel-head small,
+  .stat-label, .stat-foot, .stat-value small,
+  .goal-title, .goal-meta, .activity-text, .activity-text small,
+  .activity-amount, .activity-amount .subtitle,
+  .owner-identity p, .owner-record-date, .owner-value > span,
+  .owner-value small, .owner-metrics dt, .owner-metrics small,
+  .owner-goals h3, .holder-card p, .holder-card p strong,
+  .notice, .notice .link-button, .tabs button, .date-filter
+) { font-size: var(--data-font-size); }
+.workspace:is([data-view="overview"], [data-view="transfers"], [data-view="goals"], [data-view="holders"]) :is(.chart-note, .goal-meta, td small, .activity-text) { line-height: 1.6; }
+.workspace:is([data-view="overview"], [data-view="transfers"], [data-view="goals"], [data-view="holders"]) .panel-head { flex-wrap: wrap; }
+.workspace[data-view="overview"] .legend span { white-space: nowrap; }
+.workspace:is([data-view="overview"], [data-view="goals"]) .goal-meta { flex-wrap: wrap; gap: 6px 12px; }
+.workspace[data-view="overview"] .owner-header { flex-wrap: wrap; }
+.workspace[data-view="overview"] .allocation { flex-wrap: wrap; }
+.workspace[data-view="overview"] .alloc-list { min-width: 145px; }
+@media (max-width: 480px) {
+  .workspace[data-view="overview"] .chart { min-width: 320px; }
+  .workspace[data-view="overview"] .grid > .panel { overflow-x: auto; }
+}
+
+.workspace[data-view="holders"] .holder-card { min-width: 0; }
+.workspace[data-view="holders"] .holder-card p { flex-wrap: wrap; gap: 6px 12px; line-height: 1.6; }
+.workspace[data-view="holders"] .holder-card p strong { white-space: nowrap; }
+.workspace[data-view="transfers"] td small,
+.workspace[data-view="goals"] .goal-meta { line-height: 1.6; }

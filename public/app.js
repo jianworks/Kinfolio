@@ -260,7 +260,6 @@ function render() {
     overview: "資產總覽",
     accounts: "投資帳戶",
     transfers: "資金移轉",
-    loans: "貸款管理",
     goals: "資產目標",
     holders: "持有人",
   };
@@ -274,7 +273,7 @@ function render() {
     )
     .join(
       "",
-    )}</nav>${themeTrigger()}<div class="sidebar-bottom"><div class="user"><div class="avatar">${esc(state.user.name.slice(0, 1))}</div><span>${esc(state.user.name)}</span><button class="logout" data-action="logout">登出</button></div></div></aside><main class="main"><div class="workspace"><div class="heading"><div><div class="eyebrow">YOUR WEALTH, IN PERSPECTIVE</div><h1>${labels[page]}</h1><p class="subtitle">${{ cash: "用每月收支，掌握需要保留的現金。", overview: holder === "all" ? "每個人的資產，各自清楚掌握。" : "讓每一份資產，都有清楚的全貌。", accounts: "追蹤投入本金、帳戶價值與投資成果。", transfers: "串起帳戶之間的資金與本金流向。", loans: "記錄貸款餘額，掌握你的淨資產。", goals: "為每位持有人，設定下一個里程碑。", holders: "分別管理每位家人的資產與目標。" }[page]}</p></div><div class="actions">${page === "cash" ? '<button class="button primary" id="cash-settings-open">設定現金規劃</button>' : page === "overview" ? (holder === "all" ? btn("新增持有人", "holder", true) : btn("資金移轉", "transfer", false, "transfers") + btn("記錄估值", "valuation", true)) : page === "accounts" ? btn("新增帳戶", "account", true) : page === "transfers" ? btn("新增移轉", "transfer", true) : page === "loans" ? btn("新增貸款", "loan", true) : page === "goals" ? btn("新增目標", "goal", true) : btn("新增持有人", "holder", true)}</div></div>${config.dev ? '<div class="notice">本機開發模式 · 資料儲存在本機 D1，正式部署一律使用 Google 登入。 <button class="link-button" data-action="sample">建立示範資料</button></div>' : ""}<div class="filters" ${page === "cash" ? "hidden" : ""}><div class="tabs" aria-label="持有人篩選"><button data-holder="all" class="${holder === "all" ? "selected" : ""}">全部持有人</button>${state.holders.map((h) => `<button data-holder="${h.id}" class="${holder === h.id ? "selected" : ""}">${esc(h.name)}</button>`).join("")}</div><label class="date-filter">檢視日期 <input id="as-of" type="date" max="${today()}" value="${asOf}" aria-label="檢視日期"></label></div>${page === "cash" ? "" : liveEstimateNotice()}${{ cash: () => '<div id="cash-plan-root"></div>', overview: overview, accounts: accountPage, transfers: transferPage, loans: loanPage, goals: goalPage, holders: holderPage }[page]()}<footer class="footer"><span>${page === "cash" ? "家計 Kinfolio · 台幣月度現金流估算" : "家計 Kinfolio · 依各帳戶最近記錄彙總，非即時行情"}${page !== "cash" ? ' · 匯率：<a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer">ExchangeRate-API</a>' : ""}</span><button data-action="export">${icon("download")} 匯出資料備份</button></footer></div></main></div>`;
+    )}</nav>${themeTrigger()}<div class="sidebar-bottom"><div class="user"><div class="avatar">${esc(state.user.name.slice(0, 1))}</div><span>${esc(state.user.name)}</span><button class="logout" data-action="logout">登出</button></div></div></aside><main class="main"><div class="workspace" data-view="${page}"><div class="heading"><div><div class="eyebrow">YOUR WEALTH, IN PERSPECTIVE</div><h1>${labels[page]}</h1><p class="subtitle">${{ cash: "用每月收支，掌握需要保留的現金。", overview: holder === "all" ? "每個人的資產，各自清楚掌握。" : "讓每一份資產，都有清楚的全貌。", accounts: "追蹤投入本金、帳戶價值與投資成果。", transfers: "串起帳戶之間的資金與本金流向。", goals: "為每位持有人，設定下一個里程碑。", holders: "分別管理每位家人的資產與目標。" }[page]}</p></div><div class="actions">${page === "cash" ? '<button class="button primary" id="cash-settings-open">設定現金規劃</button>' : page === "overview" ? (holder === "all" ? btn("新增持有人", "holder", true) : btn("資金移轉", "transfer", false, "transfers") + btn("記錄估值", "valuation", true)) : page === "accounts" ? btn("新增帳戶", "account", true) : page === "transfers" ? btn("新增移轉", "transfer", true) : page === "goals" ? btn("新增目標", "goal", true) : btn("新增持有人", "holder", true)}</div></div>${config.dev ? '<div class="notice">本機開發模式 · 資料儲存在本機 D1，正式部署一律使用 Google 登入。 <button class="link-button" data-action="sample">建立示範資料</button></div>' : ""}<div class="filters" ${page === "cash" ? "hidden" : ""}><div class="tabs" aria-label="持有人篩選"><button data-holder="all" class="${holder === "all" ? "selected" : ""}">全部持有人</button>${state.holders.map((h) => `<button data-holder="${h.id}" class="${holder === h.id ? "selected" : ""}">${esc(h.name)}</button>`).join("")}</div><label class="date-filter">檢視日期 <input id="as-of" type="date" max="${today()}" value="${asOf}" aria-label="檢視日期"></label></div>${page === "cash" ? "" : liveEstimateNotice()}${{ cash: () => '<div id="cash-plan-root"></div>', overview: overview, accounts: accountPage, transfers: transferPage, goals: goalPage, holders: holderPage }[page]()}<footer class="footer"><span>${page === "cash" ? "家計 Kinfolio · 台幣月度現金流估算" : "家計 Kinfolio · 依各帳戶最近記錄彙總，非即時行情"}${page !== "cash" ? ' · 匯率：<a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer">ExchangeRate-API</a>' : ""}</span><button data-action="export">${icon("download")} 匯出資料備份</button></footer></div></main></div>`;
   if (page === "cash")
     mountCashPlan({
       root: $("#cash-plan-root"),
@@ -368,7 +367,7 @@ function chart() {
     H = 205,
     top = 12,
     bottom = 172,
-    left = 62,
+    left = 100,
     right = 665,
     timestamps = points.map((p) => Date.parse(`${p.day}T00:00:00Z`)),
     start = timestamps[0],
@@ -440,7 +439,7 @@ function activities() {
 }
 function overview() {
   if (holder === "all") return holdersOverview();
-  return `${stats()}<div class="grid"><section class="panel"><div class="panel-head"><h2>資產趨勢</h2><div class="legend"><span>資產總值</span><span class="cost-legend">投入本金</span></div></div>${chart()}</section><section class="panel"><div class="panel-head"><h2>資產配置</h2><small>依帳戶類型</small></div>${allocation()}</section></div>${accountTable()}<div class="grid"><section class="panel"><div class="panel-head"><h2>資產目標</h2><button class="link-button" data-action="goal">＋ 設定目標</button></div>${goalsList()}</section><section class="panel"><div class="panel-head"><h2>最近動態</h2><small>截至 ${asOf}</small></div>${activities()}</section></div>`;
+  return `${stats()}<div class="grid"><section class="panel"><div class="panel-head"><h2>資產趨勢</h2><div class="legend"><span>資產總值</span><span class="cost-legend">投入本金</span></div></div>${chart()}</section><section class="panel"><div class="panel-head"><h2>資產配置</h2><small>依帳戶類型</small></div>${allocation()}</section></div>${accountTable()}${loanTable()}<div class="grid"><section class="panel"><div class="panel-head"><h2>資產目標</h2><button class="link-button" data-action="goal">＋ 設定目標</button></div>${goalsList()}</section><section class="panel"><div class="panel-head"><h2>最近動態</h2><small>截至 ${asOf}</small></div>${activities()}</section></div>`;
 }
 function holdersOverview() {
   if (!state.holders.length)
@@ -513,9 +512,9 @@ function transferPage() {
       : empty("還沒有帳戶移轉", "先建立至少兩個帳戶，再記錄資金流向。")
   }</section>`;
 }
-function loanPage() {
+function loanTable() {
   const loans = loansAt();
-  return `${stats()}<section class="panel table-panel"><div class="panel-head"><h2>貸款清單</h2><small>以貸款餘額計入負債</small></div>${loans.length ? `<div class="table-wrap"><table><thead><tr><th>貸款 / 持有人</th><th class="num">剩餘本金（原幣）</th><th class="num">台幣餘額</th><th>最後記錄</th><th></th></tr></thead><tbody>${loans.map((l) => `<tr><td>${esc(l.name)}<small>${esc(holderName(l.holder_id))} · ${l.currency}</small></td><td class="num">${l.lastDate ? fmt(l.balance, 2) : "尚無記錄"}</td><td class="num">${fmt(l.valueTwd)}</td><td>${l.lastDate || "—"}</td><td><button class="link-button" data-loan="${l.id}">更新餘額</button><button class="link-button" data-loan-history="${l.id}">歷史</button></td></tr>`).join("")}</tbody></table></div>` : empty("把負債也放進財務全貌", "建立房貸或其他貸款，定期記錄剩餘本金。", btn("新增貸款", "loan", true))}</section><p class="subtitle">貸款以餘額快照追蹤，不會自動計息或預估還款。</p>`;
+  return `<section class="panel table-panel loan-table"><div class="panel-head"><h2>貸款清單 <small> / ${loans.length}</small></h2><button class="link-button" data-action="loan">＋ 新增貸款</button></div>${loans.length ? `<div class="table-wrap"><table><thead><tr><th>貸款 / 持有人</th><th class="num">剩餘本金（原幣）</th><th class="num">台幣餘額</th><th>最後記錄</th><th></th></tr></thead><tbody>${loans.map((l) => `<tr><td>${esc(l.name)}<small>${esc(holderName(l.holder_id))} · ${l.currency}</small></td><td class="num">${l.lastDate ? fmt(l.balance, 2) : "尚無記錄"}</td><td class="num">${l.lastDate ? fmt(l.valueTwd) : "尚無記錄"}</td><td>${l.lastDate || "—"}</td><td><button class="link-button" data-loan="${l.id}">更新餘額</button><button class="link-button" data-loan-history="${l.id}">歷史</button></td></tr>`).join("")}</tbody></table></div>` : empty("把負債也放進財務全貌", "建立房貸或其他貸款，定期記錄剩餘本金。", btn("新增貸款", "loan", true))}</section><p class="subtitle">貸款以餘額快照追蹤，不會自動計息或預估還款。</p>`;
 }
 function goalPage() {
   return `<section class="panel"><div class="panel-head"><h2>每一步，都是累積</h2><small>全部以 TWD 設定</small></div>${goalsList()}</section>`;
