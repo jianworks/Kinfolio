@@ -16,7 +16,7 @@ export function monthlyTrendDates(firstDate, asOf) {
 
 // Input is chronological. Keep endpoints and interior extremes, then choose
 // remaining dates nearest evenly spaced time targets (not record indices).
-export function sampleTrendPoints(points, limit = 24) {
+export function sampleTrendPoints(points, limit = 36) {
   if (points.length <= limit) return points;
   const last = points.length - 1;
   let low = 1, high = 1;

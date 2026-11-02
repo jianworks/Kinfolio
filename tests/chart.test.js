@@ -60,35 +60,35 @@ test("new histories have just the inspection date and no future points", () => {
   assert.deepEqual(monthlyTrendDates(null, "2026-10-31"), []);
   assert.deepEqual(monthlyTrendDates("2026-11-01", "2026-10-31"), []);
 });
-test("long histories retain every month instead of sampling 24 records", () => {
+test("long histories retain every month before applying the point limit", () => {
   assert.equal(monthlyTrendDates("2020-01-01", "2026-10-15").length, 82);
 });
 
 
-test("24-point sampling retains endpoints and interior extrema in date order", () => {
+test("36-point sampling retains endpoints and interior extrema in date order", () => {
   const points = monthlyTrendDates("2015-01-01", "2026-10-15").map((day, i) => ({day, value: i === 37 ? 999 : i === 72 ? -99 : 100, cost: i}));
   const result = sampleTrendPoints(points);
-  assert.equal(result.length, 24);
+  assert.equal(result.length, 36);
   assert.equal(result[0], points[0]);
   assert.equal(result.at(-1), points.at(-1));
   assert.ok(result.includes(points[37]));
   assert.ok(result.includes(points[72]));
-  assert.equal(new Set(result).size, 24);
+  assert.equal(new Set(result).size, 36);
   assert.deepEqual(result.map(p => p.day), result.map(p => p.day).sort());
 });
 test("short histories stay intact and tied extremes do not duplicate points", () => {
-  for (const length of [0, 1, 2, 24, 40]) {
+  for (const length of [0, 1, 2, 24, 35, 36, 37, 40]) {
     const points = monthlyTrendDates("2020-01-01", "2026-10-15").slice(0, length).map(day => ({day, value: 10}));
     const result = sampleTrendPoints(points);
-    assert.equal(result.length, Math.min(length, 24));
+    assert.equal(result.length, Math.min(length, 36));
     assert.equal(new Set(result).size, result.length);
-    if (length <= 24) assert.deepEqual(result, points);
+    if (length <= 36) assert.deepEqual(result, points);
   }
 });
 test("sampling uses elapsed time across irregular gaps", () => {
   const points = Array.from({length: 80}, (_, i) => ({day: new Date(Date.UTC(2020, 0, 1 + i)).toISOString().slice(0, 10), value: 10}));
   points.push(...monthlyTrendDates("2021-01-01", "2026-10-15").map(day => ({day, value: 10})));
   const result = sampleTrendPoints(points);
-  assert.equal(result.length, 24);
+  assert.equal(result.length, 36);
   assert.ok(result.filter(p => p.day >= "2021-01-01").length >= 19);
 });
