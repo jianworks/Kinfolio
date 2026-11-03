@@ -19,9 +19,9 @@ test('family members share owner data while retaining their login identities',as
    }
   }
   await db.batch([
-   db.prepare("INSERT INTO users VALUES('owner','cs.jian@mrandmrsjian.com','Owner'),('member','family@mrandmrsjian.com','Member')"),
+   db.prepare("INSERT INTO users VALUES('owner','cs.jian@mrandmrsjian.com','Owner'),('member','cc.chang@mrandmrsjian.com','Member')"),
    db.prepare("INSERT INTO revisions(user_id) VALUES('owner'),('member')"),
-   db.prepare("INSERT INTO holders VALUES('existing','owner','既有持有人'),('private','member','保留的舊資料')"),
+   db.prepare("INSERT INTO holders VALUES('existing','owner','張佳琪'),('private','member','保留的舊資料')"),
    db.prepare('INSERT INTO sessions(id,user_id,expires_at) VALUES(?,?,?),(?,?,?)').bind(await hash('owner-token'),'owner',Math.floor(Date.now()/1000)+3600,await hash('member-token'),'member',Math.floor(Date.now()/1000)+3600),
   ]);
   const env={DB:db,FAMILY_DATA_OWNER_EMAIL:'cs.jian@mrandmrsjian.com'};
@@ -34,9 +34,9 @@ test('family members share owner data while retaining their login identities',as
   assert.equal(member.data.user.id,'member');
   assert.deepEqual(member.data.holders,owner.data.holders);
   assert.equal(member.data.holders[0].id,'existing');
-  const created=await call('holders',{name:'Family shared',version:0},'member');
+  const created=await call('goals',{holderId:'existing',name:'Initial',target:100,date:'2030-01-01',basis:'assets',version:0},'member');
   assert.equal(created.status,200);
-  assert.equal((await call('state')).data.holders.length,2);
+  assert.equal((await call('state')).data.holders.length,1);
   assert.equal((await call('holders',{name:'Stale',version:0})).status,409);
   const shared=(await call('state')).data;
   assert.equal(shared.revisions[0].version,1);
@@ -54,12 +54,24 @@ test('family members share owner data while retaining their login identities',as
   await write('goals',{holderId:'existing',name:'Shared goal',target:1000,date:'2030-01-01',basis:'assets'});
   const aState=(await call('state')).data, bState=(await call('state',null,'member')).data;
   for(const table of ['accounts','events','loans','loan_balances','goals','cash_plans','revisions'])assert.deepEqual(aState[table],bState[table]);
-  assert.equal(aState.accounts.length,1);assert.equal(aState.loans.length,1);assert.equal(aState.goals.length,1);
+  assert.equal(aState.accounts.length,1);assert.equal(aState.loans.length,1);assert.equal(aState.goals.length,2);
   await write('delete',{table:'goals',id:aState.goals[0].id},'owner');
-  assert.equal((await call('state',null,'member')).data.goals.length,0);
+  assert.equal((await call('state',null,'member')).data.goals.length,1);
+  await write('holders',{name:'簡仲研'},'owner');
+  const otherHolder=(await call('state')).data.holders.find(h=>h.name==='簡仲研');
+  await write('accounts',{holderId:otherHolder.id,name:'Other secret account',type:'股票',currency:'TWD',date:'2020-01-01',principal:300,value:400,rate:1},'owner');
+  const otherAccount=(await call('state')).data.accounts.find(a=>a.holder_id===otherHolder.id);
+  const restricted=(await call('state',null,'member')).data;
+  assert.equal(restricted.access.allHolders,false);
+  assert.deepEqual(restricted.holders.map(h=>h.name),['張佳琪']);
+  assert.ok(!JSON.stringify(restricted).includes('Other secret account'));
+  assert.equal((await call('holders',{name:'Unauthorized',version:restricted.revisions[0].version},'member')).status,403);
+  assert.equal((await call('accounts',{holderId:otherHolder.id,name:'Denied',type:'股票',currency:'TWD',date:'2020-01-01',principal:0,value:0,rate:1,version:restricted.revisions[0].version},'member')).status,400);
+  assert.equal((await call('events',{kind:'valuation',accountId:otherAccount.id,date:'2020-02-01',value:900,rate:1,version:restricted.revisions[0].version},'member')).status,400);
   const exported=(await call('export',null,'member')).data;
   assert.equal(exported.user.id,'member');
-  assert.deepEqual(exported.holders,(await call('state')).data.holders);
+  assert.deepEqual(exported.holders,restricted.holders);
+  assert.ok(!JSON.stringify(exported).includes('Other secret account'));
   assert.equal((await call('state',null,null)).status,401);
   assert.equal((await call('state',null,'member',{...env,FAMILY_DATA_OWNER_EMAIL:'missing@mrandmrsjian.com'})).status,503);
   // All asset modules receive the same shared data owner, not the session actor.

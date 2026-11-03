@@ -255,6 +255,7 @@ function brand() {
 function render() {
   if (!state) return;
   setThemeUser(state.user.id || state.user.email);
+  if (state.access && !state.access.allHolders) holder = state.holders[0]?.id || "none";
   const labels = {
     cash: "現金規劃",
     overview: "資產總覽",
@@ -272,7 +273,7 @@ function render() {
     )
     .join(
       "",
-    )}</nav>${themeTrigger()}<div class="sidebar-bottom"><div class="user"><div class="avatar">${esc(state.user.name.slice(0, 1))}</div><span>${esc(state.user.name)}</span><button class="logout" data-action="logout">登出</button></div></div></aside><main class="main"><div class="workspace" data-view="${page}"><div class="heading"><div><div class="eyebrow">YOUR WEALTH, IN PERSPECTIVE</div><h1>${labels[page]}</h1><p class="subtitle">${{ cash: "用每月收支，掌握需要保留的現金。", overview: holder === "all" ? "每個人的資產，各自清楚掌握。" : "讓每一份資產，都有清楚的全貌。", accounts: "追蹤投入本金、帳戶價值與投資成果。", transfers: "串起帳戶之間的資金與本金流向。", holders: "分別管理每位家人的資產與目標。" }[page]}</p></div><div class="actions">${page === "cash" ? '<button class="button primary" id="cash-settings-open">設定現金規劃</button>' : page === "overview" ? (holder === "all" ? btn("移轉記錄", "transfer-history", false, "transfers") : btn("資金移轉", "transfer", false, "transfers") + btn("記錄估值", "valuation", true)) : page === "accounts" ? btn("新增帳戶", "account", true) : page === "transfers" ? btn("新增移轉", "transfer", true) : btn("新增持有人", "holder", true)}</div></div>${config.dev ? '<div class="notice">本機開發模式 · 資料儲存在本機 D1，正式部署一律使用 Google 登入。 <button class="link-button" data-action="sample">建立示範資料</button></div>' : ""}<div class="filters" ${page === "cash" ? "hidden" : ""}><div class="tabs" aria-label="持有人篩選"><button data-holder="all" class="${holder === "all" ? "selected" : ""}">全部持有人</button>${state.holders.map((h) => `<button data-holder="${h.id}" class="${holder === h.id ? "selected" : ""}">${esc(h.name)}</button>`).join("")}</div><label class="date-filter">檢視日期 <input id="as-of" type="date" max="${today()}" value="${asOf}" aria-label="檢視日期"></label></div>${page === "cash" ? "" : liveEstimateNotice()}${{ cash: () => '<div id="cash-plan-root"></div>', overview: overview, accounts: accountPage,  holders: holderPage }[page]()}<footer class="footer"><span>${page === "cash" ? "家計 Kinfolio · 台幣月度現金流估算" : "家計 Kinfolio · 依各帳戶最近記錄彙總，非即時行情"}${page !== "cash" ? ' · 匯率：<a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer">ExchangeRate-API</a>' : ""}</span><button data-action="export">${icon("download")} 匯出資料備份</button></footer></div></main></div>`;
+    )}</nav>${themeTrigger()}<div class="sidebar-bottom"><div class="user"><div class="avatar">${esc(state.user.name.slice(0, 1))}</div><span>${esc(state.user.name)}</span><button class="logout" data-action="logout">登出</button></div></div></aside><main class="main"><div class="workspace" data-view="${page}"><div class="heading"><div><div class="eyebrow">YOUR WEALTH, IN PERSPECTIVE</div><h1>${labels[page]}</h1><p class="subtitle">${{ cash: "用每月收支，掌握需要保留的現金。", overview: holder === "all" ? "每個人的資產，各自清楚掌握。" : "讓每一份資產，都有清楚的全貌。", accounts: "追蹤投入本金、帳戶價值與投資成果。", transfers: "串起帳戶之間的資金與本金流向。", holders: "分別管理每位家人的資產與目標。" }[page]}</p></div><div class="actions">${page === "cash" ? '<button class="button primary" id="cash-settings-open">設定現金規劃</button>' : page === "overview" ? (holder === "all" ? btn("移轉記錄", "transfer-history", false, "transfers") : btn("資金移轉", "transfer", false, "transfers") + btn("記錄估值", "valuation", true)) : page === "accounts" ? btn("新增帳戶", "account", true) : page === "transfers" ? btn("新增移轉", "transfer", true) : btn("新增持有人", "holder", true)}</div></div>${config.dev ? '<div class="notice">本機開發模式 · 資料儲存在本機 D1，正式部署一律使用 Google 登入。 <button class="link-button" data-action="sample">建立示範資料</button></div>' : ""}<div class="filters" ${page === "cash" ? "hidden" : ""}><div class="tabs" aria-label="持有人篩選">${state.access?.allHolders === false ? "" : `<button data-holder="all" class="${holder === "all" ? "selected" : ""}">全部持有人</button>`}${state.holders.map((h) => `<button data-holder="${h.id}" class="${holder === h.id ? "selected" : ""}">${esc(h.name)}</button>`).join("")}</div><label class="date-filter">檢視日期 <input id="as-of" type="date" max="${today()}" value="${asOf}" aria-label="檢視日期"></label></div>${page === "cash" ? "" : liveEstimateNotice()}${{ cash: () => '<div id="cash-plan-root"></div>', overview: overview, accounts: accountPage,  holders: holderPage }[page]()}<footer class="footer"><span>${page === "cash" ? "家計 Kinfolio · 台幣月度現金流估算" : "家計 Kinfolio · 依各帳戶最近記錄彙總，非即時行情"}${page !== "cash" ? ' · 匯率：<a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer">ExchangeRate-API</a>' : ""}</span><button data-action="export">${icon("download")} 匯出資料備份</button></footer></div></main></div>`;
   if (page === "cash")
     mountCashPlan({
       root: $("#cash-plan-root"),
@@ -486,7 +487,7 @@ function transferHistoryTable() {
     out = state.events
       .filter(
         (e) =>
-          e.kind === "transfer_out" &&
+          e.kind === "transfer_out" && e.transfer_id &&
           e.date <= asOf &&
           (ids.includes(e.account_id) ||
             state.events.some(

@@ -1,6 +1,6 @@
 import { validatePlan, rollPlan } from "../public/cash-plan-domain.js";
 import { authRoute, currentUser } from "./auth.js";
-import { familyDataUser } from "./family-data.js";
+import { familyDataUser, familyAccess, scopeFamilyData } from "./family-data.js";
 import {
   portfolioStatements,
   estimates,
@@ -105,8 +105,11 @@ async function api(request, env) {
   const actor = await currentUser(request, env);
   if (!actor) return json({ error: "請先登入" }, 401);
   const u = await familyDataUser(request, env, actor);
+  const fullData = await data(db, u);
+  const access = familyAccess(request, env, actor, fullData);
+  const visibleData = scopeFamilyData(fullData, access);
   if (path === "/api/state" && request.method === "GET")
-    return json({ user: actor, ...(await data(db, u)) });
+    return json({ user: actor, access, ...visibleData });
   if (path === "/api/export" && request.method === "GET") {
     const transfers = await db
       .prepare("SELECT * FROM transfers WHERE user_id=?")
@@ -122,8 +125,8 @@ async function api(request, env) {
         quantity: "millionths of one share",
         price: "millionths of the account currency",
       },
-      ...(await data(db, u)),
-      transfers: transfers.results,
+      ...visibleData,
+      transfers: transfers.results.filter(t => access.allHolders || visibleData.events.some(e => e.transfer_id === t.id)),
     });
   }
   if (request.method !== "POST") return json({ error: "找不到頁面" }, 404);
@@ -136,7 +139,7 @@ async function api(request, env) {
     throw new InputError("JSON 格式錯誤");
   }
   requireThat(b && typeof b === "object" && !Array.isArray(b), "資料格式錯誤");
-  const d = await data(db, u),
+  const d = visibleData,
     stmts = [];
   if (path === "/api/portfolio-estimates")
     return json({ estimates: await estimates(env, u, b, d) });
@@ -155,6 +158,7 @@ async function api(request, env) {
   } else if (path === "/api/portfolio-snapshot") {
     stmts.push(eventStatement(db, u, await snapshotEvent(db, u, b, d)));
   } else if (path === "/api/holders") {
+    if (!access.allHolders) return json({ error: "無權新增持有人" }, 403);
     stmts.push(
       db
         .prepare("INSERT INTO holders(id,user_id,name) VALUES(?,?,?)")
