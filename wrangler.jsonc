@@ -2,6 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "kinfolio",
   "keep_vars": true,
+  "triggers": { "crons": ["*/10 * * * *"] },
   "main": "src/worker.js",
   "compatibility_date": "2026-10-24",
   "assets": {

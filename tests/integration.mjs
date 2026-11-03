@@ -73,6 +73,7 @@ run([
   "--command",
   `INSERT INTO quote_cache(market,symbol,price,price_date,source,fetched_at) VALUES('FX','USD',32000000,'${today()}','Fixture FX',${Math.floor(Date.now() / 1000)});`,
 ]);
+run(["d1","execute","finance-db","--local","--persist-to",storage,"--command",`INSERT INTO stock_names(market,symbol,name,fetched_at) VALUES('TWSE','2330','台積電',${Math.floor(Date.now()/1000)}),('TPEX','6488','環球晶',${Math.floor(Date.now()/1000)}),('TWSE','2317','鴻海',${Math.floor(Date.now()/1000)});`]);
 const server = spawn(
   process.execPath,
   [
@@ -700,6 +701,23 @@ try {
   console.log(
     "Cash planning passed: persistence, validation, isolation, stale writes, backup and independent investment data.",
   );
+  await post("watchlist", {market:"TWSE",symbol:"2330",name:"ignored client name"});
+  const watched = (await request("watchlist")).data.rows;
+  assert.equal(watched.length,1);
+  assert.equal(watched[0].name,"台積電");
+  assert.equal(watched[0].analysis.stage,"資料不足");
+  assert.equal((await request("watchlist",null,"test-b")).data.rows.length,0);
+  await post("watchlist",{market:"TWSE",symbol:"2330"},"test-a",400);
+  await post("watchlist",{remove:true,id:watched[0].id},"test-b",400);
+  await post("watchlist",{market:"US",symbol:"AAPL"},"test-a",400);
+  const priorWatchVersion=(await state()).revisions[0].version;
+  await post("watchlist",{market:"TPEX",symbol:"6488",name:"環球晶"});
+  assert.equal((await request("watchlist",{market:"TWSE",symbol:"2317",version:priorWatchVersion})).status,409);
+  assert.equal((await request("export")).data.watchlist.length,2);
+  assert.equal((await request("watchlist",null,"anonymous")).status,401);
+  await post("watchlist",{remove:true,id:watched[0].id});
+  assert.equal((await request("watchlist")).data.rows.length,1);
+  console.log("Watchlist passed: persistence, duplicate validation, supported markets, tenant isolation, stale writes, export and deletion.");
   assert.equal((await request("auth/logout", {})).status, 200);
   assert.equal((await request("state")).status, 401);
   assert.equal((await request("state", null, "test-b")).status, 200);

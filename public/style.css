@@ -1599,3 +1599,21 @@ dialog.large {
 .transfer-history-toolbar p { margin: 0; }
 .transfer-history-dialog :is(table, th, td, td small, .subtitle, .notice, .panel-head small, .button) { font-size: var(--data-font-size); }
 .transfer-history-dialog td small { line-height: 1.6; }
+
+
+.watch-list {margin-bottom:20px}
+.watch-list .panel-head {gap:16px;flex-wrap:wrap}
+.watch-list .panel-head .actions {flex-wrap:wrap;justify-content:flex-end}
+.watch-table .watch-analysis {min-width:240px;max-width:340px;white-space:normal}
+.watch-table .watch-analysis small {line-height:1.7;margin-top:8px}
+.watch-table td {vertical-align:top}
+.watch-stage {display:inline-block;padding:5px 10px;border-radius:20px;background:var(--surface-alt,#eef1ed);font-size:12px;font-weight:600;white-space:nowrap}
+.watch-stage[data-stage="下跌中"],.watch-stage[data-stage="型態失效"] {color:#a33333;background:#fbe9e6}
+.watch-stage[data-stage="回測確認"] {color:#245c40;background:#e0f0e4}
+.watch-stage[data-stage="突破待確認"] {color:#805d17;background:#faf0d8}
+.watch-rules {padding:24px;margin-bottom:24px;line-height:1.8;font-size:13px}
+.watch-rules summary {cursor:pointer;font-weight:600}
+[data-view="watch"] .filters[hidden] {display:none}
+@media(max-width:600px) {.watch-list .panel-head {align-items:flex-start}.watch-list .panel-head .actions {gap:14px}}
+
+.watch-distance {min-width:195px}.watch-distance strong {font-weight:600}.watch-distance small {white-space:nowrap}
