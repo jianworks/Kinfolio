@@ -1,6 +1,6 @@
-import { watchStatements, watchRows, scanWatchlist } from "./watchlist.js";
 import { validatePlan, rollPlan } from "../public/cash-plan-domain.js";
 import { authRoute, currentUser } from "./auth.js";
+import { familyDataUser } from "./family-data.js";
 import {
   portfolioStatements,
   estimates,
@@ -31,7 +31,6 @@ const json = (body, status = 200, headers = {}) =>
 async function data(db, u) {
   const tables = [
     "holders",
-    "watchlist",
     "cash_plans",
     "accounts",
     "events",
@@ -103,11 +102,11 @@ async function api(request, env) {
     if (Number(request.headers.get("Content-Length")) > 65536)
       return json({ error: "資料太大" }, 413);
   }
-  const u = await currentUser(request, env);
-  if (!u) return json({ error: "請先登入" }, 401);
+  const actor = await currentUser(request, env);
+  if (!actor) return json({ error: "請先登入" }, 401);
+  const u = await familyDataUser(request, env, actor);
   if (path === "/api/state" && request.method === "GET")
-    return json({ user: u, ...(await data(db, u)) });
-  if (path === "/api/watchlist" && request.method === "GET") return json({ rows: await watchRows(env, u) });
+    return json({ user: actor, ...(await data(db, u)) });
   if (path === "/api/export" && request.method === "GET") {
     const transfers = await db
       .prepare("SELECT * FROM transfers WHERE user_id=?")
@@ -116,7 +115,7 @@ async function api(request, env) {
     return json({
       schemaVersion: 3,
       exportedAt: new Date().toISOString(),
-      user: u,
+      user: actor,
       units: {
         money: "hundredths of the account currency",
         fx: "millionths of TWD per currency unit",
@@ -139,15 +138,9 @@ async function api(request, env) {
   requireThat(b && typeof b === "object" && !Array.isArray(b), "資料格式錯誤");
   const d = await data(db, u),
     stmts = [];
-  if (path === "/api/watchlist-refresh") {
-    const processed = await scanWatchlist(env, u.id);
-    return json({ processed, rows: await watchRows(env,u) });
-  }
   if (path === "/api/portfolio-estimates")
     return json({ estimates: await estimates(env, u, b, d) });
-  if (path === "/api/watchlist") {
-    stmts.push(...await watchStatements(db,u,b,d.watchlist,env));
-  } else if (path === "/api/cash-plan") {
+  if (path === "/api/cash-plan") {
     const checked = validatePlan(b.plan);
     const plan = checked.start < today().slice(0,7) ? rollPlan(checked,today().slice(0,7)) : checked;
     stmts.push(
@@ -394,7 +387,6 @@ async function api(request, env) {
   return json({ ok: true });
 }
 export default {
-  async scheduled(controller, env, ctx) { ctx.waitUntil(scanWatchlist(env)); },
   async fetch(request, env) {
     let response;
     try {
@@ -410,7 +402,9 @@ export default {
           ? await api(request, env)
           : await env.ASSETS.fetch(request);
     } catch (e) {
-      if (
+      if (e.message === "FAMILY_DATA_OWNER_UNAVAILABLE")
+        response = json({ error: "家庭共用資料來源尚未就緒，請聯絡管理者確認設定" }, 503);
+      else if (
         String(e.message).includes("STALE_VERSION") ||
         String(e.message).includes("transfers.user_id, transfers.request_key")
       )

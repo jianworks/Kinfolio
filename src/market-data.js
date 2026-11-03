@@ -139,7 +139,7 @@ export async function fetchMarketQuote(
     return parseBackupQuote(symbol, await fetchData(url, true));
   }
 }
-export async function fetchJson(
+async function fetchJson(
   url,
   publicData = false,
   { timeoutMs = 12000, headers = {} } = {},
@@ -286,55 +286,3 @@ export function createQuoteService({
   };
 }
 export const getQuote = createQuoteService();
-
-export async function getStockName(env, market, symbol, fetchData = fetchJson) {
-  symbol = symbolFor(market, symbol);
-  if (!["TWSE", "TPEX"].includes(market)) throw Error("股票名稱僅支援台股");
-  const cached = await env.DB.prepare(
-    "SELECT name,fetched_at FROM stock_names WHERE market=? AND symbol=?",
-  )
-    .bind(market, symbol)
-    .first();
-  const now = Math.floor(Date.now() / 1000);
-  if (cached?.name && cached.fetched_at > now - 86400) return cached.name;
-  let name;
-  if (env.FUGLE_API_KEY) {
-    try {
-      const row = await fetchData(
-        "https://api.fugle.tw/marketdata/v1.0/stock/intraday/ticker/" +
-          encodeURIComponent(symbol),
-        false,
-        { timeoutMs: 4000, headers: { "X-API-KEY": env.FUGLE_API_KEY } },
-      );
-      if (
-        row?.symbol === symbol &&
-        row.exchange === (market === "TWSE" ? "TWSE" : "TPEx") &&
-        typeof row.name === "string"
-      )
-        name = row.name.trim();
-    } catch {}
-  }
-  if (!name) {
-    try {
-      const rows = await fetchData(MARKET_URLS[market], true, {
-        timeoutMs: 8000,
-      });
-      const row =
-        Array.isArray(rows) &&
-        rows.find(
-          (r) =>
-            (market === "TWSE" ? r.Code : r.SecuritiesCompanyCode) === symbol,
-        );
-      const value = row && (market === "TWSE" ? row.Name : row.CompanyName);
-      if (typeof value === "string") name = value.trim();
-    } catch {}
-  }
-  if (!name || name.length > 60)
-    throw Error("無法取得股票名稱，請確認市場與代號，或稍後再試");
-  await env.DB.prepare(
-    "INSERT INTO stock_names(market,symbol,name,fetched_at) VALUES(?,?,?,?) ON CONFLICT(market,symbol) DO UPDATE SET name=excluded.name,fetched_at=excluded.fetched_at",
-  )
-    .bind(market, symbol, name, now)
-    .run();
-  return name;
-}
