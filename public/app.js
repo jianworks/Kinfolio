@@ -903,6 +903,12 @@ function showForm(kind, id) {
     );
   }
 }
+function futuresPanel(a) {
+  if (a.type !== '期貨') return '';
+  const e = liveEstimates.get(a.id);
+  if (e?.source !== 'futures') return '<section class="portfolio-panel"><h3>最新期貨權益數</h3><p class="subtitle">尚未收到自動同步資料；同步後可在這裡手動儲存今日估值快照。</p></section>';
+  return `<section class="portfolio-panel"><div class="panel-head"><h3>最新期貨權益數</h3><button class="link-button" data-futures-refresh="${a.id}">重新讀取</button></div><div class="portfolio-numbers"><div>權益數（${a.currency}）<strong>${fmt(e.total,2)}</strong></div><div>折合台幣<strong>NT$ ${fmt(e.totalTwd)}</strong></div></div><p class="subtitle">自動同步 · 交易日 ${esc(e.dataDate)}<br>資料查詢時間 ${estimateTime(e.observedAt)}（台北時間）<br>最後同步時間 ${estimateTime(e.estimatedAt)}（台北時間） · 匯率 ${e.rate / FX}</p>${e.dataDate < today() ? '<p class="portfolio-warning">資料交易日早於今天，請確認後再儲存快照。</p>' : ''}${e.dataDate > today() ? '<p class="portfolio-warning">資料屬於下一交易日，請於該交易日再儲存快照。</p>' : ''}<div class="portfolio-save"><small>同步只更新最新權益數，不新增歷史、不改變投入本金。快照以今天日期保存。</small><button class="button primary" data-futures-save="${a.id}" ${e.dataDate > today() ? 'disabled' : ''}>儲存今日估值快照</button></div></section>`;
+}
 function detail(id) {
   modal.dataset.detailAccount = id;
   const a = accountState(
@@ -917,7 +923,7 @@ function detail(id) {
   $("#modal-content").innerHTML =
     `<div class="modal-head"><h2>${esc(a.name)}</h2><button class="modal-close" data-close aria-label="關閉">×</button></div><div class="modal-body"><p class="subtitle">${esc(holderName(a.holder_id))} · ${a.currency} · 截至 ${asOf}</p><div class="detail-summary"><div>投入本金<strong>${fmt(a.cost, a.currency === "USD" ? 2 : 0)}</strong></div><div>已儲存帳戶價值<strong>${fmt(a.value, a.currency === "USD" ? 2 : 0)}</strong></div><div>累計台幣投入本金<strong>${fmt(a.costTwd)}</strong></div><div>已儲存估值損益<strong>${fmt(a.valueTwd - a.costTwd)}</strong><small>${returnLabel(a.valueTwd - a.costTwd, a.cost > 0 ? a.costTwd : 0)}</small></div></div>${
       asOf === today()
-        ? portfolioPanel(
+        ? futuresPanel(a) + portfolioPanel(
             a,
             (state.portfolios || []).find((p) => p.account_id === id),
             liveEstimates.get(id),
@@ -1122,6 +1128,26 @@ document.addEventListener("click", async (e) => {
       } finally {
         busy = false;
       }
+      return;
+    }
+    if (t.dataset.futuresRefresh) {
+      const id = t.dataset.futuresRefresh;
+      await refresh();
+      detail(id);
+      return;
+    }
+    if (t.dataset.futuresSave) {
+      if (busy) return;
+      const id = t.dataset.futuresSave, e = liveEstimates.get(id);
+      if (e?.source !== 'futures') throw new Error('尚無同步權益數');
+      busy = true;
+      t.disabled = true;
+      try {
+        await api('futures-snapshot', { accountId:id, syncId:e.id });
+        await refresh();
+        detail(id);
+        toast('已儲存今日權益數快照，投入本金未變更');
+      } finally { busy = false; t.disabled = false; }
       return;
     }
     if (t.dataset.portfolioEdit) {

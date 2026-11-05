@@ -9,6 +9,9 @@ DEV_AUTH=true
 # FINNHUB_API_KEY=your-finnhub-key
 # Optional: Taiwan primary quotes; exchange open data remains the fallback.
 # FUGLE_API_KEY=your-fugle-key
+# Optional: futures equity ingestion, >=32 random characters. Never commit a real key.
+# FUTURES_SYNC_KEY=your-random-sync-key-at-least-32-characters
+# FUTURES_SYNC_ACCOUNT_ID=local-futures-account-id
 
 # Family data owner is configured in wrangler.jsonc. No data migration is needed.
 # Local preview falls back to its local test user if that owner is absent locally.

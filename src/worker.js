@@ -1,5 +1,6 @@
 import { validatePlan, rollPlan } from "../public/cash-plan-domain.js";
 import { authRoute, currentUser } from "./auth.js";
+import { syncFutures, futuresSnapshot } from "./futures.js";
 import { familyDataUser, familyAccess, scopeFamilyData } from "./family-data.js";
 import {
   portfolioStatements,
@@ -42,6 +43,7 @@ async function data(db, u) {
     "holdings",
     "portfolio_snapshots",
     "portfolio_current",
+    "futures_current",
   ];
   const results = await db.batch(
     tables.map((t) =>
@@ -143,7 +145,9 @@ async function api(request, env) {
     stmts = [];
   if (path === "/api/portfolio-estimates")
     return json({ estimates: await estimates(env, u, b, d) });
-  if (path === "/api/cash-plan") {
+  if (path === "/api/futures-snapshot") {
+    stmts.push(futuresSnapshot(db, u, b, d));
+  } else if (path === "/api/cash-plan") {
     const checked = validatePlan(b.plan);
     const plan = checked.start < today().slice(0,7) ? rollPlan(checked,today().slice(0,7)) : checked;
     stmts.push(
@@ -395,7 +399,9 @@ export default {
     let response;
     try {
       const path = new URL(request.url).pathname;
-      if (
+      if (path === "/api/integrations/futures-equity")
+        response = await syncFutures(request, env);
+      else if (
         path === "/api/config" ||
         path === "/api/auth/logout" ||
         path.startsWith("/auth/")
@@ -408,6 +414,8 @@ export default {
     } catch (e) {
       if (e.message === "FAMILY_DATA_OWNER_UNAVAILABLE")
         response = json({ error: "家庭共用資料來源尚未就緒，請聯絡管理者確認設定" }, 503);
+      else if (String(e.message).includes("events.account_id, events.date, events.futures_sync_id"))
+        response = json({ error: "這筆權益數今天已儲存快照" }, 409);
       else if (
         String(e.message).includes("STALE_VERSION") ||
         String(e.message).includes("transfers.user_id, transfers.request_key")

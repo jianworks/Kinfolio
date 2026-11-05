@@ -1,5 +1,7 @@
 # 家計 Kinfolio
 
+期貨帳戶支援外部程式推送最新權益數，歷史快照仍由使用者手動保存。金鑰設定、API 格式與 Python 範例請見 [期貨同步說明](docs/futures-sync.md)。升級須套用 `0008_futures_current.sql`。
+
 繁體中文家庭財務網站，使用 Cloudflare Workers Static Assets + D1。所有網站檔案均在本目錄。原始 Excel 僅作需求參考，沒有匯入或變更。
 
 ## 本機使用

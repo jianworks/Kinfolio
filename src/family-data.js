@@ -32,7 +32,7 @@ export function scopeFamilyData(data, access) {
       e.transfer_id && !completeTransfers.has(e.transfer_id) ? { ...e, transfer_id: null } : e),
     loan_balances: data.loan_balances.filter(r => loanIds.has(r.loan_id)),
     goals: data.goals.filter(g => access.holderIds.includes(g.holder_id)),
-    ...Object.fromEntries(["portfolios", "holdings", "portfolio_snapshots", "portfolio_current"].map(table =>
+    ...Object.fromEntries(["portfolios", "holdings", "portfolio_snapshots", "portfolio_current", "futures_current"].map(table =>
       [table, data[table].filter(r => accountIds.has(r.account_id))])),
   };
 }

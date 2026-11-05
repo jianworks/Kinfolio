@@ -1,3 +1,4 @@
+import { toTwd, today } from "./domain.js";
 // Keep the displayed estimate independent from both quote requests and historical ledger snapshots.
 export function compositionKey(portfolio, holdings) {
   return JSON.stringify([
@@ -54,6 +55,26 @@ export function restoreEstimates(data) {
     } catch {
       /* An invalid cache must not prevent loading the user's ledger. */
     }
+  }
+  for (const r of data.futures_current || []) {
+    const a = data.accounts?.find(
+      (a) => a.id === r.account_id && a.type === "期貨",
+    );
+    if (!a) continue;
+    result.set(a.id, {
+      accountId: a.id,
+      id: r.sync_id,
+      source: "futures",
+      currency: a.currency,
+      complete: true,
+      total: r.amount,
+      totalTwd: toTwd(r.amount, r.rate),
+      rate: r.rate,
+      dataDate: r.data_date,
+      observedAt: r.observed_at,
+      estimatedAt: r.updated_at,
+      warning: r.data_date < today(),
+    });
   }
   return result;
 }
