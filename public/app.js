@@ -293,21 +293,20 @@ function render() {
     exportButton.setAttribute("width", "12");
     exportButton.setAttribute("height", "12");
   }
+  queueMicrotask(refreshStaleEstimates);
+}
+function refreshStaleEstimates() {
+  if (!state || document.hidden || page === "cash" || asOf !== today() || estimateLoading)
+    return;
   const key = `${state.revisions[0].version}:${holder}:${asOf}:${Math.floor(Date.now() / 900000)}`;
+  if (autoEstimateKey === key) return;
   const staleIds = activePortfolios()
     .filter((p) => estimateNeedsRefresh(liveEstimates.get(p.account_id)))
     .map((p) => p.account_id);
-  if (
-    page !== "cash" &&
-    asOf === today() &&
-    staleIds.length &&
-    !estimateLoading &&
-    autoEstimateKey !== key
-  )
-    queueMicrotask(() => {
-      if (!estimateLoading && state) void loadEstimates(staleIds);
-    });
+  if (staleIds.length) void loadEstimates(staleIds);
 }
+setInterval(refreshStaleEstimates, 60_000);
+document.addEventListener("visibilitychange", refreshStaleEstimates);
 function stats() {
   const t = totals();
   return `<div class="stats">${[
