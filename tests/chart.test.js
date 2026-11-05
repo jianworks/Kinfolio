@@ -27,12 +27,31 @@ test("trend points use elapsed calendar time rather than observation order", () 
   const days = ["2015-12-31", "2022-02-05", "2026-10-26"];
   const html = renderDates(days);
   const xs = [...html.matchAll(/<circle cx="([^"]+)"/g)].map((m) => Number(m[1]));
-  const sampled = sampleTrendPoints(monthlyTrendDates(days[0], days.at(-1)).map(day => ({day, value: 884300000}))).map(p => p.day);
+  const sampled = sampleTrendPoints(monthlyTrendDates(days[0], days.at(-1)).map(day => ({day, value: 884300000})), 48).map(p => p.day);
   assert.equal(xs.length, sampled.length);
   for (let i = 0; i < xs.length; i++) {
     const expected = (Date.parse(sampled[i]) - Date.parse(sampled[0])) / (Date.parse(sampled.at(-1)) - Date.parse(sampled[0]));
     assert.ok(Math.abs((xs[i] - xs[0]) / (xs.at(-1) - xs[0]) - expected) < 1e-10);
   }
+});
+
+test("trend includes the latest saved date within the 48 displayed points", () => {
+  const html = renderDates(["2015-12-31", "2026-10-20", "2026-11-05"]);
+  const source = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+  const chart = source.slice(source.indexOf("function chart()"), source.indexOf("function allocation()"));
+  const savedHtml = runInNewContext(`${chart}; chart()`, {
+    state: { accounts: [{ id: "a", holder_id: "h" }], events: [
+      { account_id: "a", date: "2015-12-31" },
+      { account_id: "a", date: "2026-10-20" },
+    ] },
+    monthlyTrendDates, sampleTrendPoints, holder: "h", asOf: "2026-11-05",
+    totals: () => ({ value: 100, cost: 50 }), fmt: String,
+  });
+  const dates = [...savedHtml.matchAll(/<title>(\d{4}-\d{2}-\d{2})/g)].map((match) => match[1]);
+  assert.equal(dates.length, 48);
+  assert.ok(dates.includes("2026-10-20"));
+  assert.equal(dates.at(-1), "2026-11-05");
+  assert.equal([...html.matchAll(/<title>2026-11-05/g)].length, 1);
 });
 
 test("a single valuation has finite chart coordinates", () => {

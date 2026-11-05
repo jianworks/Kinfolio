@@ -358,9 +358,16 @@ function chart() {
       "從第一筆估值開始",
       "新增帳戶與定期估值後，即可追蹤資產的變化。",
     );
-  const days = monthlyTrendDates(recordedDays[0], asOf);
+  const limit = 48;
+  const latestRecordedDay = recordedDays.at(-1);
+  const days = [...new Set([
+    ...monthlyTrendDates(recordedDays[0], asOf),
+    latestRecordedDay,
+  ])].sort();
   const points = sampleTrendPoints(
       days.map((day) => ({ day, ...totals(day, holder, day === asOf) })),
+      limit,
+      latestRecordedDay,
     ),
     max = Math.max(...points.flatMap((p) => [p.value, p.cost]), 100),
     min = Math.min(0, ...points.map((p) => p.cost)),
@@ -390,7 +397,7 @@ function chart() {
     })
     .join(
       "",
-    )}<path d="${path("value")} L${x(points.length - 1)},${bottom} L${left},${bottom} Z" fill="url(#area)"/><path d="${path("cost")}" stroke="var(--chart-cost, #c0c8b5)" stroke-width="1.6" stroke-dasharray="5 5" fill="none"/><path d="${path("value")}" stroke="var(--chart, #46775a)" stroke-width="2.7" fill="none"/>${points.map((p, i) => `<circle cx="${x(i)}" cy="${y(p.value)}" r="3" fill="var(--chart, #46775a)"><title>${p.day}：NT$ ${fmt(p.value)}</title></circle>`).join("")}</svg>${axisLabels.join("")}${[...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])].map((i) => `<span class="chart-axis-x" style="left:${(x(i) / W) * 100}%;top:${(198 / H) * 100}%;--axis-offset:${i === 0 ? "0%" : i === points.length - 1 ? "-100%" : "-50%"}">${points[i].day}</span>`).join("")}</div><div class="chart-note">以每月底及檢視日期為基礎，最多顯示 36 點；保留首尾及中間資產最高、最低點，其餘按時間均勻取樣。今日端點與資產總值一致，歷史點使用截至當日最近一次已儲存的估值與匯率。損益包含匯率變化，圖中金額未換算為年化報酬。</div>`;
+    )}<path d="${path("value")} L${x(points.length - 1)},${bottom} L${left},${bottom} Z" fill="url(#area)"/><path d="${path("cost")}" stroke="var(--chart-cost, #c0c8b5)" stroke-width="1.6" stroke-dasharray="5 5" fill="none"/><path d="${path("value")}" stroke="var(--chart, #46775a)" stroke-width="2.7" fill="none"/>${points.map((p, i) => `<circle cx="${x(i)}" cy="${y(p.value)}" r="3" fill="var(--chart, #46775a)"><title>${p.day}：NT$ ${fmt(p.value)}</title></circle>`).join("")}</svg>${axisLabels.join("")}${[...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])].map((i) => `<span class="chart-axis-x" style="left:${(x(i) / W) * 100}%;top:${(198 / H) * 100}%;--axis-offset:${i === 0 ? "0%" : i === points.length - 1 ? "-100%" : "-50%"}">${points[i].day}</span>`).join("")}</div><div class="chart-note">以每月底、最近一筆紀錄及檢視日期為基礎，最多顯示 ${limit} 點；保留首尾、最近一筆紀錄及中間資產最高、最低點，其餘按時間均勻取樣。今日端點與資產總值一致，歷史點使用截至當日最近一次已儲存的估值與匯率。損益包含匯率變化，圖中金額未換算為年化報酬。</div>`;
 }
 function allocation() {
   const a = accountsAt(),

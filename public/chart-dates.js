@@ -14,9 +14,9 @@ export function monthlyTrendDates(firstDate, asOf) {
   return days;
 }
 
-// Input is chronological. Keep endpoints and interior extremes, then choose
+// Input is chronological. Keep endpoints, interior extremes and the required date, then choose
 // remaining dates nearest evenly spaced time targets (not record indices).
-export function sampleTrendPoints(points, limit = 36) {
+export function sampleTrendPoints(points, limit = 36, requiredDay) {
   if (points.length <= limit) return points;
   const last = points.length - 1;
   let low = 1, high = 1;
@@ -25,6 +25,8 @@ export function sampleTrendPoints(points, limit = 36) {
     if (points[i].value > points[high].value) high = i;
   }
   const selected = new Set([0, last, low, high]);
+  const required = points.findIndex((point) => point.day === requiredDay);
+  if (required !== -1 && selected.size < limit) selected.add(required);
   const times = points.map(p => Date.parse(`${p.day}T00:00:00Z`));
   const remaining = limit - selected.size;
   for (let slot = 1; slot <= remaining; slot++) {
