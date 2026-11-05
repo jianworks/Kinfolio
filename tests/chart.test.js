@@ -4,14 +4,24 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 
-function renderDates(days) {
+function renderDates(days, totals = () => ({ value: 884300000, cost: 400000000 })) {
   const source = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
   const chart = source.slice(source.indexOf("function chart()"), source.indexOf("function allocation()"));
   return runInNewContext(`${chart}; chart()`, {
     state: { accounts: [{ id: "a", holder_id: "h" }], events: days.map((date) => ({ account_id: "a", date })) },
-    monthlyTrendDates, sampleTrendPoints, holder: "h", asOf: days.at(-1), totals: () => ({ value: 884300000, cost: 400000000 }), fmt: String,
+    monthlyTrendDates, sampleTrendPoints, holder: "h", asOf: days.at(-1), totals, fmt: String,
   });
 }
+
+test("trend ends at the overview total and keeps saved historical values", () => {
+  const html = renderDates(["2026-10-31", "2026-11-05"], (_day, _holder, useLive = true) =>
+    ({ value: useLive ? 7201461 : 6900000, cost: 4385917 }),
+  );
+  assert.deepEqual([...html.matchAll(/<title>(.*?)<\/title>/g)].map((match) => match[1]), [
+    "2026-10-31：NT$ 6900000",
+    "2026-11-05：NT$ 7201461",
+  ]);
+});
 
 test("trend points use elapsed calendar time rather than observation order", () => {
   const days = ["2015-12-31", "2022-02-05", "2026-10-26"];

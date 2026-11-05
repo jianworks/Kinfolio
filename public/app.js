@@ -108,7 +108,7 @@ function liveEstimateNotice() {
         : missing
           ? "部分帳戶尚無完整持股估算，暫用已儲存歷史估值；請查看帳戶明細。"
           : "目前顯示資料庫保存的最近一次完整持股估算（非即時報價）。";
-  return `<div class="notice">${message}${times.length ? "<br>估算最後更新：" + estimateTime(times[0]) + "（台北時間；各帳戶時間可在明細查看）" : ""}<br>行情更新完成後才替換金額；歷史曲線仍只使用手動儲存的估值快照。</div>`;
+  return `<div class="notice">${message}${times.length ? "<br>估算最後更新：" + estimateTime(times[0]) + "（台北時間；各帳戶時間可在明細查看）" : ""}<br>行情更新完成後才替換金額；趨勢圖的今日端點會同步更新。</div>`;
 }
 
 const icons = {
@@ -359,7 +359,9 @@ function chart() {
       "新增帳戶與定期估值後，即可追蹤資產的變化。",
     );
   const days = monthlyTrendDates(recordedDays[0], asOf);
-  const points = sampleTrendPoints(days.map((day) => ({ day, ...totals(day, holder, false) }))),
+  const points = sampleTrendPoints(
+      days.map((day) => ({ day, ...totals(day, holder, day === asOf) })),
+    ),
     max = Math.max(...points.flatMap((p) => [p.value, p.cost]), 100),
     min = Math.min(0, ...points.map((p) => p.cost)),
     W = 680,
@@ -388,7 +390,7 @@ function chart() {
     })
     .join(
       "",
-    )}<path d="${path("value")} L${x(points.length - 1)},${bottom} L${left},${bottom} Z" fill="url(#area)"/><path d="${path("cost")}" stroke="var(--chart-cost, #c0c8b5)" stroke-width="1.6" stroke-dasharray="5 5" fill="none"/><path d="${path("value")}" stroke="var(--chart, #46775a)" stroke-width="2.7" fill="none"/>${points.map((p, i) => `<circle cx="${x(i)}" cy="${y(p.value)}" r="3" fill="var(--chart, #46775a)"><title>${p.day}：NT$ ${fmt(p.value)}</title></circle>`).join("")}</svg>${axisLabels.join("")}${[...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])].map((i) => `<span class="chart-axis-x" style="left:${(x(i) / W) * 100}%;top:${(198 / H) * 100}%;--axis-offset:${i === 0 ? "0%" : i === points.length - 1 ? "-100%" : "-50%"}">${points[i].day}</span>`).join("")}</div><div class="chart-note">以每月底及檢視日期為基礎，最多顯示 36 點；保留首尾及中間資產最高、最低點，其餘按時間均勻取樣。沿用截至當日最近一次估值與匯率；損益包含匯率變化，不是年化報酬。</div>`;
+    )}<path d="${path("value")} L${x(points.length - 1)},${bottom} L${left},${bottom} Z" fill="url(#area)"/><path d="${path("cost")}" stroke="var(--chart-cost, #c0c8b5)" stroke-width="1.6" stroke-dasharray="5 5" fill="none"/><path d="${path("value")}" stroke="var(--chart, #46775a)" stroke-width="2.7" fill="none"/>${points.map((p, i) => `<circle cx="${x(i)}" cy="${y(p.value)}" r="3" fill="var(--chart, #46775a)"><title>${p.day}：NT$ ${fmt(p.value)}</title></circle>`).join("")}</svg>${axisLabels.join("")}${[...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])].map((i) => `<span class="chart-axis-x" style="left:${(x(i) / W) * 100}%;top:${(198 / H) * 100}%;--axis-offset:${i === 0 ? "0%" : i === points.length - 1 ? "-100%" : "-50%"}">${points[i].day}</span>`).join("")}</div><div class="chart-note">以每月底及檢視日期為基礎，最多顯示 36 點；保留首尾及中間資產最高、最低點，其餘按時間均勻取樣。今日端點與資產總值一致，歷史點使用截至當日最近一次已儲存的估值與匯率。損益包含匯率變化，圖中金額未換算為年化報酬。</div>`;
 }
 function allocation() {
   const a = accountsAt(),
