@@ -83,12 +83,13 @@ export function acceptEstimate(map, incoming) {
   if (
     previous?.complete &&
     previous.compositionKey === incoming.compositionKey &&
-    (!incoming.complete || incoming.refreshFailed)
+    (!incoming.complete || incoming.refreshFailed || incoming.refreshDeferred)
   ) {
     map.set(incoming.accountId, {
       ...previous,
       checkedAt: incoming.checkedAt || incoming.estimatedAt,
-      updateWarning: incoming.pending
+      retryAt: incoming.retryAt || null,
+      updateWarning: incoming.pending || incoming.refreshDeferred
         ? "正在更新行情，沿用最近完整估算"
         : "行情更新不完整，沿用最近完整估算",
       warning: previous.warning || !!incoming.refreshFailed,
@@ -96,6 +97,7 @@ export function acceptEstimate(map, incoming) {
   } else map.set(incoming.accountId, incoming);
 }
 export function estimateNeedsRefresh(estimate, now = Date.now()) {
+  if (estimate?.retryAt) return now >= Date.parse(estimate.retryAt);
   if (estimate?.currency === "USD" && !estimate.fxSource) return true;
   const checked = Date.parse(estimate?.checkedAt || estimate?.estimatedAt);
   return !Number.isFinite(checked) || now - checked >= 900000;

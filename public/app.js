@@ -45,7 +45,7 @@ async function loadEstimates(
     version = state.revisions[0].version;
   estimateLoading = true;
   estimateError = "";
-  autoEstimateKey = `${version}:${holder}:${asOf}:${Math.floor(Date.now() / 900000)}`;
+  autoEstimateKey = `${version}:${holder}:${asOf}:${Math.floor(Date.now() / 60000)}`;
   render();
   try {
     for (const id of ids) {
@@ -298,7 +298,7 @@ function render() {
 function refreshStaleEstimates() {
   if (!state || document.hidden || page === "cash" || asOf !== today() || estimateLoading)
     return;
-  const key = `${state.revisions[0].version}:${holder}:${asOf}:${Math.floor(Date.now() / 900000)}`;
+  const key = `${state.revisions[0].version}:${holder}:${asOf}:${Math.floor(Date.now() / 60000)}`;
   if (autoEstimateKey === key) return;
   const staleIds = activePortfolios()
     .filter((p) => estimateNeedsRefresh(liveEstimates.get(p.account_id)))
@@ -307,6 +307,36 @@ function refreshStaleEstimates() {
 }
 setInterval(refreshStaleEstimates, 60_000);
 document.addEventListener("visibilitychange", refreshStaleEstimates);
+let futuresLoading = false;
+async function refreshFutures() {
+  if (!state || document.hidden || asOf !== today() || busy || futuresLoading ||
+      !state.accounts.some((account) => account.type === "期貨")) return;
+  const epoch = estimateEpoch;
+  futuresLoading = true;
+  try {
+    const result = await api("futures-current");
+    if (!state || epoch !== estimateEpoch || busy) return;
+    const estimates = restoreEstimates({
+      accounts: state.accounts,
+      futures_current: result.futures_current,
+    });
+    for (const [id, estimate] of liveEstimates) {
+      if (estimate.source === "futures") liveEstimates.delete(id);
+    }
+    for (const [id, estimate] of estimates) liveEstimates.set(id, estimate);
+    state.futures_current = result.futures_current;
+    render();
+    const id = modal.dataset.detailAccount;
+    if (modal.open && state.accounts.some((a) => a.id === id && a.type === "期貨"))
+      detail(id);
+  } catch {
+    // Preserve the last known values and retry on the next interval.
+  } finally {
+    futuresLoading = false;
+  }
+}
+setInterval(refreshFutures, 60_000);
+document.addEventListener("visibilitychange", refreshFutures);
 function stats() {
   const t = totals();
   return `<div class="stats">${[

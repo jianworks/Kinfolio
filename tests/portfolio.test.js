@@ -290,6 +290,12 @@ test("real D1 quote cache retains old prices on failure, limits provider calls a
     assert.equal((await quote(env, "US", "AAPL")).price, first.price);
     assert.equal(calls, 1);
     now += 901;
+    await db.prepare("UPDATE quote_cache SET last_attempt=?,error='' WHERE symbol='AAPL'").bind(now).run();
+    const deferred = await quote(env, "US", "AAPL");
+    assert.equal(deferred.deferred, true);
+    assert.equal(deferred.retryAt, new Date((now + 600) * 1000).toISOString());
+    assert.equal(calls, 1);
+    now += 601;
     fail = true;
     const old = await quote(env, "US", "AAPL");
     assert.equal(old.price, first.price);

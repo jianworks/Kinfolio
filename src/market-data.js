@@ -204,6 +204,8 @@ export function createQuoteService({
     if (previous?.last_attempt > now - 600 && !configuredSinceFailure)
       return {
         ...previous,
+        deferred: !previous.error,
+        retryAt: new Date((previous.last_attempt + 600) * 1000).toISOString(),
         warning: previous.error || "行情更新中，沿用最近價格",
       };
     await db
@@ -229,7 +231,12 @@ export function createQuoteService({
         .prepare("SELECT * FROM quote_cache WHERE market=? AND symbol=?")
         .bind(market, symbol)
         .first();
-      return { ...q, warning: q?.error || "行情更新中，請稍後再試" };
+      return {
+        ...q,
+        deferred: !q?.error,
+        retryAt: new Date(((q?.last_attempt || now) + 600) * 1000).toISOString(),
+        warning: q?.error || "行情更新中，請稍後再試",
+      };
     }
     try {
       let url = MARKET_URLS[market];
@@ -281,7 +288,7 @@ export function createQuoteService({
         .prepare("UPDATE quote_cache SET error=? WHERE market=? AND symbol=?")
         .bind(safe, market, symbol)
         .run();
-      return { ...previous, warning: safe };
+      return { ...previous, warning: safe, retryAt: new Date((now + 600) * 1000).toISOString() };
     }
   };
 }

@@ -6,6 +6,19 @@ import {
   acceptEstimate,
   estimateNeedsRefresh,
 } from "../public/estimate-state.js";
+test("deferred refresh keeps the complete total and becomes due at retryAt", () => {
+  const map = new Map([["a", { accountId: "a", compositionKey: "same", complete: true, total: 100 }]]);
+  const retryAt = "2026-11-12T04:10:00Z";
+  acceptEstimate(map, {
+    accountId: "a", compositionKey: "same", complete: true, total: 90,
+    refreshDeferred: true, retryAt, checkedAt: "2026-11-12T04:00:00Z",
+  });
+  const estimate = map.get("a");
+  assert.equal(estimate.total, 100);
+  assert.match(estimate.updateWarning, /正在更新行情/);
+  assert.equal(estimateNeedsRefresh(estimate, Date.parse(retryAt) - 1), false);
+  assert.equal(estimateNeedsRefresh(estimate, Date.parse(retryAt)), true);
+});
 test("reload and partial/background refresh retain the last complete total instead of the historical value", () => {
   const p = {
     account_id: "a",

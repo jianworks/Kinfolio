@@ -204,7 +204,9 @@ export async function estimates(
         warning: q.warning || (old ? "價格日期較舊，請確認後再儲存" : null),
         manual: !!h.manual_price,
         pending: !!q.pending,
-        refreshFailed: !!q.warning && !q.pending,
+        refreshDeferred: !!q.deferred,
+        retryAt: q.retryAt || null,
+        refreshFailed: !!q.warning && !q.pending && !q.deferred,
       });
     }
     if (!fxMemo.has(a.currency))
@@ -238,6 +240,8 @@ export async function estimates(
         (a.currency === "TWD" ? null : "帳戶原有匯率"),
       fxWarning: fx.warning || null,
       refreshFailed: holdings.some((h) => h.refreshFailed),
+      refreshDeferred: holdings.some((h) => h.refreshDeferred),
+      retryAt: holdings.map((h) => h.retryAt).filter(Boolean).sort().at(-1) || null,
       version: d.revisions[0].version,
       compositionKey: compositionKey(
         p,
@@ -265,8 +269,8 @@ export async function estimates(
     results.push(result);
     const checked = Date.parse(result.checkedAt);
     const publish =
-      result.complete && (!result.refreshFailed || !priorCurrent.has(a.id));
-    const cacheError = pending
+      result.complete && ((!result.refreshFailed && !result.refreshDeferred) || !priorCurrent.has(a.id));
+    const cacheError = pending || result.refreshDeferred
       ? "行情正在分批更新"
       : result.refreshFailed
         ? "行情更新失敗，沿用最近完整估算"

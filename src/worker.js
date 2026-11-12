@@ -112,6 +112,8 @@ async function api(request, env) {
   const visibleData = scopeFamilyData(fullData, access);
   if (path === "/api/state" && request.method === "GET")
     return json({ user: actor, access, ...visibleData });
+  if (path === "/api/futures-current" && request.method === "GET")
+    return json({ futures_current: visibleData.futures_current });
   if (path === "/api/export" && request.method === "GET") {
     const transfers = await db
       .prepare("SELECT * FROM transfers WHERE user_id=?")
