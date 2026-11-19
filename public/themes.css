@@ -56,7 +56,16 @@ body {
   color: var(--accent);
 }
 .up {
-  color: var(--positive, #287e62);
+  color: #c0392b;
+}
+.down {
+  color: #287e62;
+}
+.main-stat .annual-asset-change .up {
+  color: #ffb4ab;
+}
+.main-stat .annual-asset-change .down {
+  color: #a6e3b5;
 }
 .login-story {
   color: var(--on-accent);

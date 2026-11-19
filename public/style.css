@@ -565,10 +565,10 @@ p {
   color: var(--on-accent, #c6dbce);
 }
 .up {
-  color: var(--positive, #287e62);
+  color: #c0392b;
 }
 .down {
-  color: var(--red);
+  color: #287e62;
 }
 .grid {
   display: grid;

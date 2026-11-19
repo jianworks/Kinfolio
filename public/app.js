@@ -337,13 +337,14 @@ async function refreshFutures() {
 }
 setInterval(refreshFutures, 60_000);
 document.addEventListener("visibilitychange", refreshFutures);
+const amountClass = (value) => value > 0 ? "up" : value < 0 ? "down" : "";
 function annualAssetChange(value, h = holder) {
   const baseline = previousYearAssets(state.accounts, state.events, asOf, h);
   const year = asOf.slice(0, 4);
   if (!baseline)
     return `<div class="annual-asset-change">${year} 年增減：去年無記錄，無法比較</div>`;
   const change = value - baseline.value;
-  return `<div class="annual-asset-change"><span>${year} 年${change > 0 ? "增加" : change < 0 ? "減少" : "持平"} <strong>${change > 0 ? "+" : change < 0 ? "−" : ""}NT$ ${fmt(Math.abs(change))}</strong></span><small>相較去年最後記錄 ${baseline.date} · NT$ ${fmt(baseline.value)}</small></div>`;
+  return `<div class="annual-asset-change"><span>${year} 年${change > 0 ? "增加" : change < 0 ? "減少" : "持平"} <strong class="${amountClass(change)}">${change > 0 ? "+" : change < 0 ? "−" : ""}NT$ ${fmt(Math.abs(change))}</strong></span><small>相較去年最後記錄 ${baseline.date} · NT$ ${fmt(baseline.value)}</small></div>`;
 }
 function stats() {
   const t = totals();
@@ -376,7 +377,7 @@ function stats() {
   ]
     .map(
       (s) =>
-        `<div class="stat${s.main ? " main-stat" : ""}"><div class="stat-label">${s.label}<span class="stat-icon">${icon(s.icon)}</span></div><div class="stat-value ${s.label === "累計投資損益" ? (s.value < 0 ? "down" : "up") : ""}"><small>NT$</small>${fmt(s.value)}</div><div class="stat-foot">${s.foot}</div></div>`,
+        `<div class="stat${s.main ? " main-stat" : ""}"><div class="stat-label">${s.label}<span class="stat-icon">${icon(s.icon)}</span></div><div class="stat-value ${s.label === "累計投資損益" ? amountClass(s.value) : ""}"><small>NT$</small>${fmt(s.value)}</div><div class="stat-foot">${s.foot}</div></div>`,
     )
     .join("")}</div>`;
 }
@@ -452,7 +453,7 @@ function allocation() {
 }
 function accountTable() {
   const a = accountsAt();
-  return `<section class="panel table-panel"><div class="panel-head"><h2>投資帳戶 <small> / ${a.length}</small></h2><div class="actions"><button class="link-button transfer-history-trigger" data-action="transfer-history">${icon("transfers")}移轉記錄</button><button class="link-button" data-action="account">＋ 新增帳戶</button></div></div>${!a.length ? empty("建立你的第一個投資帳戶", "支援台幣、美金與日幣，按持有人分別追蹤。", btn("新增帳戶", "account", true)) : `<div class="table-wrap"><table><thead><tr><th>帳戶 / 持有人</th><th>類型</th><th class="num">投入本金（原幣）</th><th class="num">帳戶價值（原幣）</th><th class="num">台幣價值</th><th class="num">損益（台幣）</th><th></th></tr></thead><tbody>${a.map((a) => `<tr><td><div class="account-name"><span class="account-symbol">${a.currency === "TWD" ? "台" : a.currency === "USD" ? "美" : "日"}</span><div>${esc(a.name)}<small>${esc(holderName(a.holder_id))} · ${a.currency}</small></div></div></td><td><span class="tag">${a.type}</span></td><td class="num">${fmt(a.cost, a.currency === "USD" ? 2 : 0)}</td><td class="num">${fmt(a.value, a.currency === "USD" ? 2 : 0)}<small>${a.live ? "最後更新 " + estimateTime(a.estimateUpdatedAt) + (a.liveWarning ? "（沿用最近行情）" : "") : a.lastDate}${a.currency === "TWD" ? "" : " · 匯率 " + a.rate / FX}</small></td><td class="num">${fmt(a.valueTwd)}</td><td class="num ${a.valueTwd - a.costTwd < 0 ? "down" : "up"}">${a.valueTwd - a.costTwd >= 0 ? "+" : ""}${fmt(a.valueTwd - a.costTwd)}<small>${returnLabel(a.valueTwd - a.costTwd, a.cost > 0 ? a.costTwd : 0)}</small></td><td><button class="link-button" data-detail="${a.id}">明細 ↗</button></td></tr>`).join("")}</tbody></table></div>`}</section>`;
+  return `<section class="panel table-panel"><div class="panel-head"><h2>投資帳戶 <small> / ${a.length}</small></h2><div class="actions"><button class="link-button transfer-history-trigger" data-action="transfer-history">${icon("transfers")}移轉記錄</button><button class="link-button" data-action="account">＋ 新增帳戶</button></div></div>${!a.length ? empty("建立你的第一個投資帳戶", "支援台幣、美金與日幣，按持有人分別追蹤。", btn("新增帳戶", "account", true)) : `<div class="table-wrap"><table><thead><tr><th>帳戶 / 持有人</th><th>類型</th><th class="num">投入本金（原幣）</th><th class="num">帳戶價值（原幣）</th><th class="num">台幣價值</th><th class="num">損益（台幣）</th><th></th></tr></thead><tbody>${a.map((a) => `<tr><td><div class="account-name"><span class="account-symbol">${a.currency === "TWD" ? "台" : a.currency === "USD" ? "美" : "日"}</span><div>${esc(a.name)}<small>${esc(holderName(a.holder_id))} · ${a.currency}</small></div></div></td><td><span class="tag">${a.type}</span></td><td class="num">${fmt(a.cost, a.currency === "USD" ? 2 : 0)}</td><td class="num">${fmt(a.value, a.currency === "USD" ? 2 : 0)}<small>${a.live ? "最後更新 " + estimateTime(a.estimateUpdatedAt) + (a.liveWarning ? "（沿用最近行情）" : "") : a.lastDate}${a.currency === "TWD" ? "" : " · 匯率 " + a.rate / FX}</small></td><td class="num">${fmt(a.valueTwd)}</td><td class="num ${amountClass(a.valueTwd - a.costTwd)}">${a.valueTwd - a.costTwd >= 0 ? "+" : ""}${fmt(a.valueTwd - a.costTwd)}<small>${returnLabel(a.valueTwd - a.costTwd, a.cost > 0 ? a.costTwd : 0)}</small></td><td><button class="link-button" data-detail="${a.id}">明細 ↗</button></td></tr>`).join("")}</tbody></table></div>`}</section>`;
 }
 function goalsList() {
   const goals = state.goals.filter(
@@ -509,7 +510,7 @@ function holdersOverview() {
           : dates.length
             ? "最近記錄 " + dates.at(-1)
             : "尚無資產記錄"
-      }</span></header><div class="owner-value"><span>資產總值</span><strong><small>NT$</small>${fmt(t.value)}</strong></div>${annualAssetChange(t.value, h.id)}<dl class="owner-metrics"><div><dt>累計投入本金</dt><dd>NT$ ${fmt(t.cost)}</dd></div><div><dt>累計投資損益</dt><dd class="${t.profit < 0 ? "down" : "up"}">${t.profit >= 0 ? "+" : ""}NT$ ${fmt(t.profit)}</dd><small>${returnLabel(t.profit, t.cost)}</small></div><div><dt>貸款餘額</dt><dd>NT$ ${fmt(t.debt)}</dd></div><div><dt>淨資產</dt><dd>NT$ ${fmt(t.net)}</dd></div></dl><section class="owner-goals" aria-label="${esc(h.name)}的資產目標"><h3>資產目標</h3>${
+      }</span></header><div class="owner-value"><span>資產總值</span><strong><small>NT$</small>${fmt(t.value)}</strong></div>${annualAssetChange(t.value, h.id)}<dl class="owner-metrics"><div><dt>累計投入本金</dt><dd>NT$ ${fmt(t.cost)}</dd></div><div><dt>累計投資損益</dt><dd class="${amountClass(t.profit)}">${t.profit >= 0 ? "+" : ""}NT$ ${fmt(t.profit)}</dd><small>${returnLabel(t.profit, t.cost)}</small></div><div><dt>貸款餘額</dt><dd>NT$ ${fmt(t.debt)}</dd></div><div><dt>淨資產</dt><dd>NT$ ${fmt(t.net)}</dd></div></dl><section class="owner-goals" aria-label="${esc(h.name)}的資產目標"><h3>資產目標</h3>${
         goals.length
           ? `<div class="goal-list">${goals
               .map((g) => {
@@ -968,7 +969,7 @@ function detail(id) {
       .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
   modal.classList.add("large");
   $("#modal-content").innerHTML =
-    `<div class="modal-head"><h2>${esc(a.name)}</h2><button class="modal-close" data-close aria-label="關閉">×</button></div><div class="modal-body"><p class="subtitle">${esc(holderName(a.holder_id))} · ${a.currency} · 截至 ${asOf}</p><div class="detail-summary"><div>投入本金<strong>${fmt(a.cost, a.currency === "USD" ? 2 : 0)}</strong></div><div>已儲存帳戶價值<strong>${fmt(a.value, a.currency === "USD" ? 2 : 0)}</strong></div><div>累計台幣投入本金<strong>${fmt(a.costTwd)}</strong></div><div>已儲存估值損益<strong>${fmt(a.valueTwd - a.costTwd)}</strong><small>${returnLabel(a.valueTwd - a.costTwd, a.cost > 0 ? a.costTwd : 0)}</small></div></div>${
+    `<div class="modal-head"><h2>${esc(a.name)}</h2><button class="modal-close" data-close aria-label="關閉">×</button></div><div class="modal-body"><p class="subtitle">${esc(holderName(a.holder_id))} · ${a.currency} · 截至 ${asOf}</p><div class="detail-summary"><div>投入本金<strong>${fmt(a.cost, a.currency === "USD" ? 2 : 0)}</strong></div><div>已儲存帳戶價值<strong>${fmt(a.value, a.currency === "USD" ? 2 : 0)}</strong></div><div>累計台幣投入本金<strong>${fmt(a.costTwd)}</strong></div><div>已儲存估值損益<strong class="${amountClass(a.valueTwd - a.costTwd)}">${fmt(a.valueTwd - a.costTwd)}</strong><small>${returnLabel(a.valueTwd - a.costTwd, a.cost > 0 ? a.costTwd : 0)}</small></div></div>${
       asOf === today()
         ? futuresPanel(a) + portfolioPanel(
             a,
