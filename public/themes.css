@@ -62,10 +62,13 @@ body {
   color: #287e62;
 }
 .main-stat .annual-asset-change .up {
-  color: #ffb4ab;
+  color: #ffd0ca;
 }
 .main-stat .annual-asset-change .down {
-  color: #a6e3b5;
+  color: #b9ffd0;
+}
+.main-stat .stat-foot {
+  opacity: 1;
 }
 .login-story {
   color: var(--on-accent);
