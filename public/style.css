@@ -1599,3 +1599,17 @@ dialog.large {
 .transfer-history-toolbar p { margin: 0; }
 .transfer-history-dialog :is(table, th, td, td small, .subtitle, .notice, .panel-head small, .button) { font-size: var(--data-font-size); }
 .transfer-history-dialog td small { line-height: 1.6; }
+.annual-asset-change {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.annual-asset-change strong {
+  font-weight: 600;
+}
+.annual-asset-change small {
+  display: block;
+  font-size: 11px;
+  opacity: .8;
+}

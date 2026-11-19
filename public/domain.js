@@ -157,3 +157,18 @@ export function transferPrincipal(source, amount, received, fromRate) {
 export function simpleReturn(profit, principal) {
   return principal > 0 ? (profit / principal) * 100 : null;
 }
+export function previousYearAssets(accounts, events, asOf, holder = "all") {
+  const year = Number(asOf.slice(0, 4)) - 1;
+  const selected = accounts.filter((a) => holder === "all" || a.holder_id === holder);
+  const ids = new Set(selected.map((a) => a.id));
+  const lastDate = events
+    .filter((e) => ids.has(e.account_id) && e.date >= `${year}-01-01` && e.date <= `${year}-12-31`)
+    .map((e) => e.date)
+    .sort()
+    .at(-1);
+  if (!lastDate) return null;
+  return {
+    date: lastDate,
+    value: selected.reduce((sum, a) => sum + accountState(a, events, lastDate).valueTwd, 0),
+  };
+}
