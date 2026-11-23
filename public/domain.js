@@ -172,3 +172,12 @@ export function previousYearAssets(accounts, events, asOf, holder = "all") {
     value: selected.reduce((sum, a) => sum + accountState(a, events, lastDate).valueTwd, 0),
   };
 }
+export function annualProfit(accounts, events, asOf, currentValue, holder = "all") {
+  const baseline = previousYearAssets(accounts, events, asOf, holder);
+  if (!baseline) return null;
+  const netPrincipal = accounts
+    .filter((a) => holder === "all" || a.holder_id === holder)
+    .reduce((sum, a) => sum + accountState(a, events, asOf).costTwd -
+      accountState(a, events, baseline.date).costTwd, 0);
+  return { ...baseline, netPrincipal, profit: currentValue - baseline.value - netPrincipal };
+}

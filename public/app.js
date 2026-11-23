@@ -6,7 +6,7 @@ import {
   acceptEstimate,
   estimateNeedsRefresh,
 } from "./estimate-state.js";
-import { accountState, toTwd, today, FX, simpleReturn, previousYearAssets } from "./domain.js";
+import { accountState, toTwd, today, FX, simpleReturn, annualProfit } from "./domain.js";
 import {
   portfolioEligible,
   portfolioPanel,
@@ -338,13 +338,13 @@ async function refreshFutures() {
 setInterval(refreshFutures, 60_000);
 document.addEventListener("visibilitychange", refreshFutures);
 const amountClass = (value) => value > 0 ? "up" : value < 0 ? "down" : "";
-function annualAssetChange(value, h = holder) {
-  const baseline = previousYearAssets(state.accounts, state.events, asOf, h);
+function annualProfitSummary(value, h = holder) {
+  const baseline = annualProfit(state.accounts, state.events, asOf, value, h);
   const year = asOf.slice(0, 4);
   if (!baseline)
-    return `<div class="annual-asset-change">${year} 年增減：去年無記錄，無法比較</div>`;
-  const change = value - baseline.value;
-  return `<div class="annual-asset-change"><span>${year} 年${change > 0 ? "增加" : change < 0 ? "減少" : "持平"} <strong class="${amountClass(change)}">${change > 0 ? "+" : change < 0 ? "−" : ""}NT$ ${fmt(Math.abs(change))}</strong></span><small>相較去年最後記錄 ${baseline.date} · NT$ ${fmt(baseline.value)}</small></div>`;
+    return `<div class="annual-asset-change">${year} 年度損益：去年無記錄，無法比較</div>`;
+  const change = baseline.profit;
+  return `<div class="annual-asset-change"><span>${year} 年度損益 <strong class="${amountClass(change)}">${change > 0 ? "+" : change < 0 ? "−" : ""}NT$ ${fmt(Math.abs(change))}</strong></span><small>以去年最後記錄 ${baseline.date} 為基準，已扣除本年度淨投入本金（含匯率損益）</small></div>`;
 }
 function stats() {
   const t = totals();
@@ -352,7 +352,7 @@ function stats() {
     {
       label: "資產總值",
       value: t.value,
-      foot: `${accountsAt().length} 個投資帳戶 · TWD${annualAssetChange(t.value)}`,
+      foot: `${accountsAt().length} 個投資帳戶 · TWD${annualProfitSummary(t.value)}`,
       main: true,
       icon: "accounts",
     },
@@ -510,7 +510,7 @@ function holdersOverview() {
           : dates.length
             ? "最近記錄 " + dates.at(-1)
             : "尚無資產記錄"
-      }</span></header><div class="owner-value"><span>資產總值</span><strong><small>NT$</small>${fmt(t.value)}</strong></div>${annualAssetChange(t.value, h.id)}<dl class="owner-metrics"><div><dt>累計投入本金</dt><dd>NT$ ${fmt(t.cost)}</dd></div><div><dt>累計投資損益</dt><dd class="${amountClass(t.profit)}">${t.profit >= 0 ? "+" : ""}NT$ ${fmt(t.profit)}</dd><small>${returnLabel(t.profit, t.cost)}</small></div><div><dt>貸款餘額</dt><dd>NT$ ${fmt(t.debt)}</dd></div><div><dt>淨資產</dt><dd>NT$ ${fmt(t.net)}</dd></div></dl><section class="owner-goals" aria-label="${esc(h.name)}的資產目標"><h3>資產目標</h3>${
+      }</span></header><div class="owner-value"><span>資產總值</span><strong><small>NT$</small>${fmt(t.value)}</strong></div>${annualProfitSummary(t.value, h.id)}<dl class="owner-metrics"><div><dt>累計投入本金</dt><dd>NT$ ${fmt(t.cost)}</dd></div><div><dt>累計投資損益</dt><dd class="${amountClass(t.profit)}">${t.profit >= 0 ? "+" : ""}NT$ ${fmt(t.profit)}</dd><small>${returnLabel(t.profit, t.cost)}</small></div><div><dt>貸款餘額</dt><dd>NT$ ${fmt(t.debt)}</dd></div><div><dt>淨資產</dt><dd>NT$ ${fmt(t.net)}</dd></div></dl><section class="owner-goals" aria-label="${esc(h.name)}的資產目標"><h3>資產目標</h3>${
         goals.length
           ? `<div class="goal-list">${goals
               .map((g) => {
